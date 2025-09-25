@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/datastore/__init__.py
+src/datastore/aggregates.py
+src/datastore/cli.py
+src/datastore/config.py
+src/datastore/idempotency.py
+src/datastore/reads.py
+src/datastore/timescale_policies.py
+src/datastore/writes.py
+src/datastore.egg-info/PKG-INFO
+src/datastore.egg-info/SOURCES.txt
+src/datastore.egg-info/dependency_links.txt
+src/datastore.egg-info/requires.txt
+src/datastore.egg-info/top_level.txt
+src/datastore/service/app.py

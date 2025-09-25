@@ -1,0 +1,30 @@
+Metadata-Version: 2.4
+Name: datastore
+Version: 0.1.0
+Summary: Data store control-plane (schema, migrations, policies, ops) for market-data.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.115
+Requires-Dist: uvicorn[standard]>=0.30
+Requires-Dist: sqlalchemy>=2.0
+Requires-Dist: asyncpg>=0.29
+Requires-Dist: alembic>=1.13
+Requires-Dist: psycopg[binary]>=3.2
+Requires-Dist: typer>=0.12
+Requires-Dist: pydantic>=2.7
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: prometheus-client>=0.20
+Requires-Dist: loguru>=0.7
+Provides-Extra: dev
+Requires-Dist: ruff>=0.1; extra == "dev"
+Requires-Dist: black>=23.0; extra == "dev"
+Requires-Dist: pre-commit>=3.0; extra == "dev"
+
+# market-data-store
+
+Thin **control-plane** for the market data database:
+- **Migrations & policies** (TimescaleDB)
+- **Admin endpoints**: health, readiness, schema/version, migrate, retention/compression, backfills, aggregates
+- **Prometheus** metrics
+
+> No bulk reads/writes via HTTP. Orchestrator writes via the `datastore` library; readers query DB directly or via a future analytics API.

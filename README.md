@@ -75,4 +75,48 @@ Below is a snapshot of the repo's structure with logical groupings to help new c
 
 ⚙️ **Project Config** → [`pyproject.toml`](pyproject.toml)
 
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.11+
+- PostgreSQL 13+ (with TimescaleDB extension optional)
+- Virtual environment
+
+### Installation
+
+```powershell
+# Clone and setup
+git clone <repository>
+cd market-data-store
+
+# Create and activate virtual environment
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+
+# For development
+pip install -r requirements-dev.txt
+```
+
+### Database Setup
+
+```powershell
+# Run migrations
+python -m datastore.cli migrate
+
+# Apply seed data
+python -m datastore.cli seed
+
+# Apply TimescaleDB policies (optional)
+python -m datastore.cli policies
+```
+
+### Dependencies
+
+- **Production**: [`requirements.txt`](requirements.txt) - Core runtime dependencies
+- **Development**: [`requirements-dev.txt`](requirements-dev.txt) - Includes dev tools (ruff, black, pre-commit)
+- **Project Config**: [`pyproject.toml`](pyproject.toml) - Full project metadata and build configuration
+
 > **Cursor**: You can regenerate this section automatically whenever the folder structure changes. The `/cursorrules/` directory is your home base for self-bootstrapping rules and automation.

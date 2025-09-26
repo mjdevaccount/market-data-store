@@ -1,0 +1,10 @@
+# Development dependencies for market-data-store
+# Install with: pip install -r requirements-dev.txt
+
+# Include production dependencies
+-r requirements.txt
+
+# Development tools
+ruff>=0.1
+black>=23.0
+pre-commit>=3.0

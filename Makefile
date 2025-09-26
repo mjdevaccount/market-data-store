@@ -10,13 +10,13 @@ APP_PORT ?= 8081
 PGHOST ?= localhost
 PGPORT ?= 5432
 PGUSER ?= postgres
-PGDATABASE ?= marketdata
+PGDATABASE ?= market_data   # <- matches .env (underscore, not marketdata)
 
 # Docker Compose shortcut
 DC := docker compose
 
 .PHONY: help dev up down reset logs run migrate seed policies fmt lint test \
-        psql psql-local psql-docker db-shell status
+        psql psql-local psql-docker db-shell status db-ready
 
 help:
 	@echo "Targets:"
@@ -35,6 +35,7 @@ help:
 	@echo "  psql        - open psql inside the DB container (most reliable)"
 	@echo "  psql-local  - use local Windows psql via host port (requires psql in PATH)"
 	@echo "  db-shell    - sh inside DB container"
+	@echo "  db-ready    - wait until Postgres is healthy"
 	@echo "  status      - docker ps filter for md_postgres"
 
 # ----- Python dev -----
@@ -57,7 +58,7 @@ logs:
 	$(DC) logs -f --tail=200
 
 status:
-	docker ps --filter name=market_data_store-db
+	docker ps --filter name=md_postgres
 
 # ----- App run (no shell-specific var expansion) -----
 run:
@@ -92,7 +93,7 @@ test:
 # ----- Postgres helpers -----
 # Most reliable: use the psql inside the running container (no Windows PATH drama)
 psql psql-docker:
-	docker exec -it market_data_store-db psql -U $(PGUSER) -d $(PGDATABASE)
+	docker exec -it md_postgres psql -U $(PGUSER) -d $(PGDATABASE)
 
 # If you WANT to use your Windows psql (you fixed PATH), this hits localhost:5432
 psql-local:
@@ -100,4 +101,13 @@ psql-local:
 
 # Open an interactive shell in the DB container (alpine -> use sh)
 db-shell:
-	docker exec -it market_data_store-db sh
+	docker exec -it md_postgres sh
+
+# Wait until Postgres is healthy before running migrations/seed
+db-ready:
+	@echo "Waiting for Postgres to be ready at $(PGHOST):$(PGPORT)..."
+	@until docker exec md_postgres pg_isready -U $(PGUSER) -d $(PGDATABASE) > /dev/null 2>&1; do \
+		sleep 1; \
+		echo "Still waiting..."; \
+	done
+	@echo "Postgres is ready!"

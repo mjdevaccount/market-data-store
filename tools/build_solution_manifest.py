@@ -6,7 +6,7 @@ import re
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 INCLUDE_DIRS = ["src", "migrations", "cursorrules"]
-EXCLUDE = re.compile(r"(__pycache__|\.pyc$|\.git|\.venv|dist|egg-info)")
+EXCLUDE = re.compile(r"(__pycache__|\.pyc$|\.git|\.venv|dist|egg-info|solution_manifest\.json)")
 
 
 def short_summary(p):
@@ -40,9 +40,20 @@ for d in INCLUDE_DIRS:
                 continue
             rel = os.path.relpath(fp, ROOT).replace("\\", "/")
             items.append({"path": rel, "sha": sha256(fp), "summary": short_summary(fp)})
+
 manifest = {"repo": "market-data-store", "items": items}
 out = os.path.join(ROOT, "cursorrules", "solution_manifest.json")
 os.makedirs(os.path.dirname(out), exist_ok=True)
+
+# Check if content has changed to avoid unnecessary writes
+new_content = json.dumps(manifest, indent=2) + "\n"
+if os.path.exists(out):
+    with open(out, "r", encoding="utf-8") as f:
+        existing_content = f.read()
+    if existing_content == new_content:
+        print(f"Solution manifest is up to date with {len(items)} items")
+        exit(0)
+
 with open(out, "w", encoding="utf-8") as f:
-    json.dump(manifest, f, indent=2)
+    f.write(new_content)
 print(f"Wrote {out} with {len(items)} items")

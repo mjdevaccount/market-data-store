@@ -77,11 +77,6 @@
       "summary": "# cursorrules"
     },
     {
-      "path": "cursorrules/solution_manifest.json",
-      "sha": "d1f7057a28465f3f",
-      "summary": "{"
-    },
-    {
       "path": "cursorrules/rules/api_control_plane.mdc",
       "sha": "dedf32997c3826c3",
       "summary": "# Rule: API Control-Plane"

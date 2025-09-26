@@ -26,3 +26,4 @@ repos:
         entry: python tools/build_solution_manifest.py
         language: system
         pass_filenames: false
+        always_run: true

@@ -5,6 +5,6 @@
 -r requirements.txt
 
 # Development tools
-ruff>=0.1
-black>=23.0
-pre-commit>=3.0
+ruff>=0.13.2
+black>=25.9.0
+pre-commit>=4.3.0

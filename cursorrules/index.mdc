@@ -28,3 +28,10 @@ ENVIRONMENT
 GUARDRAILS
 - No destructive SQL or DDL unless explicitly asked.
 - Keep rule files ≤ 60 lines; keep prompts terse; reuse vocabulary from this file.
+
+README GENERATION
+- Auto-regenerate "📂 Project Layout & Description" section when folder structure changes.
+- Use logical groupings: Infra & Ops, Schema & Migrations, Service Layer, Automation Rules.
+- Include clickable markdown links for all file/directory references.
+- Add practical navigation guide with emojis and direct file links.
+- Always mention /cursorrules/ as Cursor's home base for self-bootstrapping.

@@ -110,6 +110,11 @@
       "path": "cursorrules/rules/solution_lookup.mdc",
       "sha": "c23a0341fe3445c0",
       "summary": "# Rule: Solution Lookup"
+    },
+    {
+      "path": "cursorrules/rules/readme_generation.mdc",
+      "sha": "new_rule_sha",
+      "summary": "# Rule: README Generation"
     }
   ]
 }

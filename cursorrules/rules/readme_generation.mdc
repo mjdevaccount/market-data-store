@@ -1,0 +1,54 @@
+# README Generation Rules
+
+## Auto-Generation Prompt
+When the user requests README updates or folder structure changes, automatically regenerate the "📂 Project Layout & Description" section with:
+
+1. **Logical Groupings**: Organize into Infra & Ops, Schema & Migrations, Service Layer, Automation Rules
+2. **Clickable Links**: Use markdown links for all file/directory references in navigation
+3. **Emoji Usage**: Consistent emojis for visual hierarchy (🏗️ 🗄️ 🚀 🤖 🧭)
+4. **Navigation Guide**: Include practical "How to Navigate" with direct file links
+5. **Cursor Integration**: Always mention /cursorrules/ as Cursor's home base
+
+## Format Template
+```markdown
+## 📂 Project Layout & Description
+
+This repository is structured as a **control-plane** with clear separation between infrastructure, schema management, service layer, and automation rules.
+
+Below is a snapshot of the repo's structure with logical groupings to help new contributors and automation tools (like Cursor) navigate effectively.
+
+### 🏗️ **Infra & Ops**
+[Directory tree with inline comments]
+
+### 🗄️ **Schema & Migrations**
+[Directory tree with inline comments]
+
+### 🚀 **Service Layer**
+[Directory tree with inline comments]
+
+### 🤖 **Automation Rules**
+[Directory tree with inline comments]
+
+### 🧭 **How to Navigate**
+
+🗄️ **DB Migrations** → [`/migrations/versions/`](migrations/versions/)
+🚀 **Admin Endpoints** → [`/src/datastore/service/app.py`](src/datastore/service/app.py)
+[Additional navigation items with clickable links]
+
+> **Cursor**: You can regenerate this section automatically whenever the folder structure changes. The `/cursorrules/` directory is your home base for self-bootstrapping rules and automation.
+```
+
+## Auto-Detection Triggers
+- Folder structure changes
+- New files added to src/datastore/
+- Changes to cursorrules/ directory
+- User requests README updates
+- Project layout modifications
+
+## Self-Bootstrap Instructions
+When regenerating, always:
+1. Scan current directory structure
+2. Categorize files into logical groups
+3. Generate clickable markdown links
+4. Include practical navigation guide
+5. Add Cursor regeneration note

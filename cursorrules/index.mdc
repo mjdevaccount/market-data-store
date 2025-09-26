@@ -12,6 +12,7 @@ CONTEXT INJECTION
 - Inject only assets referenced by the task. Never dump entire files.
 - Inject order: core config → library → service → migrations → tests.
 - Prefer @reference with small, targeted snippets.
+- Always reference database_schema.mdc for schema, CLI, and migration details.
 
 STYLE
 - Python 3.11, FastAPI, Typer, SQLAlchemy 2.x, Alembic.

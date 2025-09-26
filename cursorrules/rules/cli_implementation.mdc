@@ -1,0 +1,39 @@
+# Rule: CLI Implementation Details
+SCOPE
+- Specific implementation details for datastore CLI commands.
+
+CLI STRUCTURE
+- Entry point: python -m datastore.cli
+- Commands: migrate, seed, policies
+- Error handling: All commands use try/catch with loguru logging
+- Database connection: Uses get_settings() from config.py for DATABASE_URL
+
+MIGRATE COMMAND
+- Runs: subprocess.run(["alembic", "upgrade", target])
+- Working directory: Path(__file__).parent.parent.parent (project root)
+- Success: logger.success() with migration output
+- Failure: logger.error() with stderr, sys.exit(1)
+
+SEED COMMAND
+- Reads: seeds/seed.sql file
+- Executes: SQL against database using SQLAlchemy engine
+- Connection: create_engine(settings.database_url)
+- Transaction: conn.execute(text(seed_sql)); conn.commit()
+
+POLICIES COMMAND
+- Checks: TimescaleDB extension availability
+- Query: SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'
+- Implementation: Stub with example retention/compression policies
+- Logs: Warning if TimescaleDB not found, info about policies
+
+ERROR PATTERNS
+- File not found: logger.error() + sys.exit(1)
+- Database connection: logger.error() + sys.exit(1)
+- Subprocess failure: logger.error() + sys.exit(1)
+- All exceptions: logger.error() + sys.exit(1)
+
+CONTEXT
+- @reference src/datastore/cli.py
+- @reference src/datastore/config.py
+- @reference seeds/seed.sql
+- @reference alembic.ini

@@ -1,0 +1,38 @@
+# Rule: Database Schema & CLI
+SCOPE
+- Core database schema, migrations, and CLI commands for market-data-store control-plane.
+
+DATABASE SCHEMA
+- Core tables: tenants (UUID PK, tenant_id unique), jobs_outbox (idempotency, job processing), api_config (JSONB settings)
+- Fact tables: bars (OHLCV + timeframes), fundamentals (financial metrics), news (sentiment), options_snap (options chains)
+- Features: RLS policies for tenant isolation, updated_at triggers, optimized indexes, views (latest_prices, data_freshness, job_queue_health)
+- Multi-tenant: All fact tables have tenant_id FK with RLS policy using current_setting('app.tenant_id')::uuid
+
+CLI COMMANDS
+- migrate [target]: Run Alembic migrations (default: head)
+- seed: Apply seeds/seed.sql with default tenant and API config
+- policies: Apply TimescaleDB retention/compression policies (stub implementation)
+- All commands use loguru for logging and proper error handling
+
+MIGRATION STRUCTURE
+- migrations/versions/0001_initial.py: Complete schema with tables, triggers, RLS, indexes, views
+- seeds/seed.sql: Default tenant, API config (rate limits, cache, data freshness), forex sessions
+- alembic.ini: Complete logging configuration for pre-commit compatibility
+
+DEPENDENCIES
+- Production: fastapi, uvicorn, sqlalchemy, asyncpg, psycopg, alembic, typer, pydantic, pydantic-settings, python-dotenv, loguru, prometheus-client
+- Development: ruff>=0.13.2, black>=25.9.0, pre-commit>=4.3.0
+- Requirements files: requirements.txt (production), requirements-dev.txt (includes dev tools)
+
+CONFIGURATION
+- src/datastore/config.py: Pydantic BaseSettings with DATABASE_URL, ADMIN_DATABASE_URL, APP_PORT, ADMIN_TOKEN
+- Environment: Always activate .\.venv\Scripts\Activate.ps1, load .env file
+- Database URL format: postgresql+psycopg://user:pass@host:port/dbname
+
+CONTEXT
+- @reference migrations/versions/0001_initial.py
+- @reference seeds/seed.sql
+- @reference src/datastore/cli.py
+- @reference src/datastore/config.py
+- @reference requirements.txt
+- @reference requirements-dev.txt

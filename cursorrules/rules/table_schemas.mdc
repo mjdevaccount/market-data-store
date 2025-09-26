@@ -1,0 +1,32 @@
+# Rule: Table Schemas
+SCOPE
+- Specific table definitions and relationships for market-data-store.
+
+CORE TABLES
+- tenants: id (UUID PK), tenant_id (string unique), name, created_at, updated_at
+- jobs_outbox: id (bigint PK), idempotency_key (text unique), job_type, payload (JSONB), status, priority, retries, created_at, updated_at
+- api_config: key (text PK), value (JSONB), description, updated_at
+
+FACT TABLES (Multi-tenant with RLS)
+- bars: id (UUID PK), tenant_id (UUID FK), symbol, timeframe, ts, open_price, high_price, low_price, close_price, volume, vendor, created_at, updated_at
+  - Unique: (symbol, timeframe, ts)
+  - Index: (symbol, timeframe, ts DESC)
+- fundamentals: id (UUID PK), tenant_id (UUID FK), symbol, asof, total_assets, total_liabilities, net_income, eps, vendor, created_at, updated_at
+  - Unique: (symbol, asof)
+  - Index: (symbol, asof DESC)
+- news: id (UUID PK), tenant_id (UUID FK), symbol, title, url, published_at, sentiment_score, vendor, created_at, updated_at
+  - Unique: (symbol, published_at, vendor)
+  - Index: (symbol, published_at DESC)
+- options_snap: id (UUID PK), tenant_id (UUID FK), symbol, expiry, option_type, strike, ts, iv, delta, gamma, oi, volume, spot, vendor, created_at
+  - Unique: (symbol, expiry, option_type, strike, ts)
+  - Index: (symbol, expiry, ts DESC)
+
+FEATURES
+- RLS: Enabled on all fact tables with policy tenant_id = current_setting('app.tenant_id', true)::uuid
+- Triggers: update_updated_at_column() function with triggers on all tables with updated_at
+- Views: latest_prices, data_freshness, job_queue_health
+- Extensions: pgcrypto, uuid-ossp
+
+CONTEXT
+- @reference migrations/versions/0001_initial.py
+- @reference seeds/seed.sql

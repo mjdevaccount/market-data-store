@@ -68,7 +68,7 @@
     },
     {
       "path": "cursorrules/index.mdc",
-      "sha": "0a74f2e6a6dd20f2",
+      "sha": "467c9fbc5605c4c2",
       "summary": "# Always-Active Rules (market-data-store)"
     },
     {
@@ -82,9 +82,19 @@
       "summary": "# Rule: API Control-Plane"
     },
     {
+      "path": "cursorrules/rules/cli_implementation.mdc",
+      "sha": "bbf10714218f847e",
+      "summary": "# Rule: CLI Implementation Details"
+    },
+    {
       "path": "cursorrules/rules/coding_standards.mdc",
       "sha": "9aba7a6714c2f2de",
       "summary": "# Rule: Coding Standards"
+    },
+    {
+      "path": "cursorrules/rules/database_schema.mdc",
+      "sha": "46008253a3b37a23",
+      "summary": "# Rule: Database Schema & CLI"
     },
     {
       "path": "cursorrules/rules/datastore_lib_rules.mdc",
@@ -115,6 +125,11 @@
       "path": "cursorrules/rules/solution_lookup.mdc",
       "sha": "d00503caa058af2e",
       "summary": "# Rule: Solution Lookup"
+    },
+    {
+      "path": "cursorrules/rules/table_schemas.mdc",
+      "sha": "4a061d9321044239",
+      "summary": "# Rule: Table Schemas"
     }
   ]
 }

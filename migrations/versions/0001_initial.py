@@ -2,7 +2,7 @@
 
 Revision ID: 0001_initial
 Revises:
-Create Date: 2025-01-25
+Create Date: 2025-01-27
 
 """
 
@@ -194,13 +194,14 @@ def upgrade() -> None:
     for table in ["bars", "fundamentals", "news", "options_snap"]:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
 
-    # Create RLS policies for tenant isolation
+    # Create RLS policies for tenant isolation (both USING and WITH CHECK)
     for table in ["bars", "fundamentals", "news", "options_snap"]:
         op.execute(
             f"""
+            DROP POLICY IF EXISTS tenant_isolation_{table} ON {table};
             CREATE POLICY tenant_isolation_{table} ON {table}
-            FOR ALL TO PUBLIC
-            USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
+            USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
+            WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
         """
         )
 

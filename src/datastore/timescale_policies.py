@@ -1,2 +1,63 @@
-# Helpers to apply retention/compression/chunk policies (no tables yet).
-# Implement once schema is finalized.
+from loguru import logger
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
+
+CHECK_TS = text("SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'")
+
+HYPERS = [
+    ("bars", "ts"),
+    ("fundamentals", "asof"),
+    ("news", "published_at"),
+    ("options_snap", "ts"),
+]
+
+COMPRESSION_POLICIES = [
+    ("bars", "90 days"),
+    ("options_snap", "90 days"),
+    ("news", "30 days"),
+]
+
+
+def _timescale_available(engine: Engine) -> bool:
+    with engine.connect() as conn:
+        return bool(conn.execute(CHECK_TS).scalar())
+
+
+def apply_hypertables(engine: Engine) -> None:
+    if not _timescale_available(engine):
+        logger.warning("TimescaleDB not installed; skipping hypertables.")
+        return
+    with engine.begin() as conn:
+        for table, timecol in HYPERS:
+            logger.info(f"Creating hypertable for {table}({timecol}) if not exists")
+            conn.execute(
+                text("SELECT create_hypertable(:t, :tc, if_not_exists => TRUE);").bindparams(
+                    t=table, tc=timecol
+                )
+            )
+
+
+def apply_compression(engine: Engine) -> None:
+    if not _timescale_available(engine):
+        logger.warning("TimescaleDB not installed; skipping compression policies.")
+        return
+    with engine.begin() as conn:
+        for table, interval in COMPRESSION_POLICIES:
+            logger.info(f"Enabling compression and adding policy on {table} ({interval})")
+            conn.execute(text(f"ALTER TABLE {table} SET (timescaledb.compress);"))
+            conn.execute(
+                text("SELECT add_compression_policy(:t, INTERVAL :ival)").bindparams(
+                    t=table, ival=interval
+                )
+            )
+
+
+def apply_retention(engine: Engine) -> None:
+    # Optional: add retention policies later if desired
+    pass
+
+
+def apply_all(engine: Engine) -> None:
+    apply_hypertables(engine)
+    apply_compression(engine)
+    apply_retention(engine)

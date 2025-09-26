@@ -1,0 +1,17 @@
+# Rule: Solution Lookup
+GOAL
+- Map user intents to assets so injection is precise.
+
+LOOKUP
+- "api" → src/datastore/service/app.py
+- "settings" | "config" → src/datastore/config.py
+- "migrations" | "alembic" → migrations/, alembic.ini, migrations/env.py
+- "cli" | "typer" → src/datastore/cli.py
+- "writes" | "reads" → src/datastore/writes.py, src/datastore/reads.py
+- "policies" → src/datastore/timescale_policies.py
+- "aggregates" → src/datastore/aggregates.py
+- "environment" | "venv" → cursorrules/rules/environment_setup.mdc
+- "manifest" → cursorrules/solution_manifest.json
+
+INJECTION
+- Resolve to the shortest matching asset; prefer single-file references.

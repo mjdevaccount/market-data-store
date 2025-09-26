@@ -1,0 +1,22 @@
+# Rule: Coding Standards
+SCOPE
+- Enforce project-specific coding standards.
+
+REQUIREMENTS
+- Line length: 100 characters (Black/Ruff config).
+- Python 3.11 target version.
+- Use type hints on all functions.
+- Import order: stdlib → third-party → local.
+- Use pydantic BaseSettings for config.
+- Log with loguru, not print().
+- Add Prometheus metrics for operations.
+
+FORMATTING
+- Black for code formatting.
+- Ruff for linting and import sorting.
+- Pre-commit hooks enforce standards.
+
+CONTEXT
+- @reference pyproject.toml
+- @reference .pre-commit-config.yaml
+- @reference cursorrules/index.mdc

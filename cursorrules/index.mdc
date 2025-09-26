@@ -1,0 +1,30 @@
+# Always-Active Rules (market-data-store)
+SCOPE
+- This repo is a data-store control-plane: FastAPI admin endpoints, Alembic migrations, policies, CLI, metrics.
+- No bulk data plane here. Orchestrator writes via the datastore library; readers go direct DB or separate analytics API.
+
+BOUNDARIES
+- Do not create business tables without explicit instruction.
+- Control-plane endpoints: health, readiness, schema/version, migrate, retention/compression, aggregate refresh, backfills, metrics.
+- Auth: mutating endpoints must support X-Admin-Token.
+
+CONTEXT INJECTION
+- Inject only assets referenced by the task. Never dump entire files.
+- Inject order: core config → library → service → migrations → tests.
+- Prefer @reference with small, targeted snippets.
+
+STYLE
+- Python 3.11, FastAPI, Typer, SQLAlchemy 2.x, Alembic.
+- Line length: 100 characters (enforced by Black/Ruff).
+- Keep modules cohesive, small, and documented with a top docstring.
+- Log with loguru; expose Prometheus metrics; add type hints.
+- Use pydantic BaseSettings for configuration.
+
+ENVIRONMENT
+- Always activate virtual environment: .\.venv\Scripts\Activate.ps1
+- Load .env file for environment variables before running scripts.
+- Use PowerShell syntax for all terminal commands.
+
+GUARDRAILS
+- No destructive SQL or DDL unless explicitly asked.
+- Keep rule files ≤ 60 lines; keep prompts terse; reuse vocabulary from this file.

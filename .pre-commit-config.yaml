@@ -18,3 +18,11 @@ repos:
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
+
+  - repo: local
+    hooks:
+      - id: build-solution-manifest
+        name: build solution manifest
+        entry: python tools/build_solution_manifest.py
+        language: system
+        pass_filenames: false

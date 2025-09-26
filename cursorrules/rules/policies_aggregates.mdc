@@ -1,0 +1,11 @@
+# Rule: Timescale Policies & Aggregates
+SCOPE
+- Helpers to apply retention/compression and define continuous aggregates (no tables yet).
+
+REQUIREMENTS
+- Expose functions that accept table/aggregate names and policy params; validate existence before execution.
+- Provide dry-run mode returning the SQL to execute.
+
+CONTEXT
+- @reference src/datastore/timescale_policies.py
+- @reference src/datastore/aggregates.py

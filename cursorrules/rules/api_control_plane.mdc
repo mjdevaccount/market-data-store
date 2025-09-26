@@ -1,0 +1,17 @@
+# Rule: API Control-Plane
+SCOPE
+- Build/modify FastAPI endpoints: /healthz, /readyz, /schema/version, /migrate, /retention/apply, /refresh/aggregate, /backfill/{job}, /metrics.
+- Do not add data-plane (bulk reads/writes).
+
+REQUIREMENTS
+- Add dependency for X-Admin-Token on mutating endpoints; return 401 if missing/invalid.
+- Record Prometheus counters/gauges/histograms for requests and outcomes.
+- Return JSON with consistent shape {status, details?}.
+
+CONTEXT
+- @reference src/datastore/service/app.py
+- @reference src/datastore/config.py
+- @reference cursorrules/index.mdc
+
+TESTING
+- Create minimal tests for auth and 200/401/202 paths (no DB deps).

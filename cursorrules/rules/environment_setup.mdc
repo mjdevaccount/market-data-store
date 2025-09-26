@@ -1,0 +1,20 @@
+# Rule: Environment Setup
+SCOPE
+- Ensure proper virtual environment and environment variable setup.
+
+REQUIREMENTS
+- Always activate virtual environment before running commands: .\.venv\Scripts\Activate.ps1
+- Load .env file for environment variables in Python scripts.
+- Use PowerShell syntax for all terminal commands.
+- Install dependencies in virtual environment, not globally.
+
+CONTEXT
+- @reference cursorrules/index.mdc
+- @reference pyproject.toml
+- @reference .env (if exists)
+
+COMMANDS
+- Activation: .\.venv\Scripts\Activate.ps1
+- Install: pip install -e .
+- Run: python -m datastore.cli
+- Test: python -c "import datastore; print('ok')"

@@ -1,0 +1,14 @@
+# Rule: Migrations Framework
+SCOPE
+- Wire Alembic env only. Do not define tables yet.
+
+REQUIREMENTS
+- migrations/env.py must read DATABASE_URL (pydantic settings ok).
+- target_metadata=None for now; use SQLAlchemy 2.0 engine pattern.
+- Provide CLI helpers to run upgrade/downgrade later.
+
+CONTEXT
+- @reference alembic.ini
+- @reference migrations/
+- @reference src/datastore/cli.py
+- @reference src/datastore/config.py

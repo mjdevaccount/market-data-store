@@ -1,0 +1,13 @@
+# Rule: Datastore Library
+SCOPE
+- Provide lib scaffolding for future writes/reads/idempotency; no real DDL yet.
+
+REQUIREMENTS
+- Create connection helpers, session management (async or sync), and placeholders:
+  - writes.py: upsert/batch placeholders, no-op bodies.
+  - reads.py: tiny ops helpers only for tests.
+  - idempotency.py: key builders, conflict strategies (stubs).
+- Document public functions with docstrings and expected contracts.
+
+CONTEXT
+- @reference src/datastore/{writes.py,reads.py,idempotency.py,config.py}

@@ -1,0 +1,115 @@
+{
+  "repo": "market-data-store",
+  "items": [
+    {
+      "path": "src/datastore/aggregates.py",
+      "sha": "79cf777d4ab167bd",
+      "summary": "# Define continuous aggregates after base tables exist."
+    },
+    {
+      "path": "src/datastore/cli.py",
+      "sha": "41e5a5dae6902356",
+      "summary": "import typer"
+    },
+    {
+      "path": "src/datastore/config.py",
+      "sha": "46c5cd51ce269d21",
+      "summary": "from pydantic import BaseSettings"
+    },
+    {
+      "path": "src/datastore/idempotency.py",
+      "sha": "23436558ad810a28",
+      "summary": "# Placeholder for idempotency helpers (hashing keys, conflict handling)."
+    },
+    {
+      "path": "src/datastore/reads.py",
+      "sha": "94ff1a6ba05e8f7b",
+      "summary": "# Intentionally minimal; add read helpers later (for ops/tests), not bulk APIs."
+    },
+    {
+      "path": "src/datastore/timescale_policies.py",
+      "sha": "428e59cc6eb198bf",
+      "summary": "# Helpers to apply retention/compression/chunk policies (no tables yet)."
+    },
+    {
+      "path": "src/datastore/writes.py",
+      "sha": "9736a6efba67fc7a",
+      "summary": "# Intentionally minimal; orchestrator will import this package to write data."
+    },
+    {
+      "path": "src/datastore/__init__.py",
+      "sha": "fe9cca32e79c2b83",
+      "summary": "__all__ = [\"config\"]"
+    },
+    {
+      "path": "src/datastore/service/app.py",
+      "sha": "78898ad701739402",
+      "summary": "from fastapi import FastAPI, Response, status, HTTPException, Depends, Request"
+    },
+    {
+      "path": "migrations/env.py",
+      "sha": "634d1db26808be1c",
+      "summary": "from logging.config import fileConfig"
+    },
+    {
+      "path": "migrations/README",
+      "sha": "31595cf53626af9e",
+      "summary": "Generic single-database configuration."
+    },
+    {
+      "path": "migrations/script.py.mako",
+      "sha": "d38920781b4d31ae",
+      "summary": "\"\"\"${message}"
+    },
+    {
+      "path": "cursorrules/index.mdc",
+      "sha": "29e30ad227814c80",
+      "summary": "# Always-Active Rules (market-data-store)"
+    },
+    {
+      "path": "cursorrules/README.md",
+      "sha": "c5500aee7bc5f45f",
+      "summary": "# cursorrules"
+    },
+    {
+      "path": "cursorrules/solution_manifest.json",
+      "sha": "2c8869e98cbf42dc",
+      "summary": "{"
+    },
+    {
+      "path": "cursorrules/rules/api_control_plane.mdc",
+      "sha": "079dfc2793743b48",
+      "summary": "# Rule: API Control-Plane"
+    },
+    {
+      "path": "cursorrules/rules/coding_standards.mdc",
+      "sha": "3a5bed1fb21fdd9f",
+      "summary": "# Rule: Coding Standards"
+    },
+    {
+      "path": "cursorrules/rules/datastore_lib_rules.mdc",
+      "sha": "fe2f95e9653cd40e",
+      "summary": "# Rule: Datastore Library"
+    },
+    {
+      "path": "cursorrules/rules/environment_setup.mdc",
+      "sha": "ee054e65c0a68c70",
+      "summary": "# Rule: Environment Setup"
+    },
+    {
+      "path": "cursorrules/rules/migrations_rules.mdc",
+      "sha": "7c024a35520dcdaf",
+      "summary": "# Rule: Migrations Framework"
+    },
+    {
+      "path": "cursorrules/rules/policies_aggregates.mdc",
+      "sha": "6ac7c2eda14ce49b",
+      "summary": "# Rule: Timescale Policies & Aggregates"
+    },
+    {
+      "path": "cursorrules/rules/solution_lookup.mdc",
+      "sha": "c23a0341fe3445c0",
+      "summary": "# Rule: Solution Lookup"
+    }
+  ]
+}

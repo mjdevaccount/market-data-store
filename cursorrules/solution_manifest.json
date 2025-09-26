@@ -8,13 +8,13 @@
     },
     {
       "path": "src/datastore/cli.py",
-      "sha": "41e5a5dae6902356",
+      "sha": "69c22ba8c5855df7",
       "summary": "import typer"
     },
     {
       "path": "src/datastore/config.py",
-      "sha": "46c5cd51ce269d21",
-      "summary": "from pydantic import BaseSettings"
+      "sha": "5ec0e305bf6c95ef",
+      "summary": "from pydantic_settings import BaseSettings"
     },
     {
       "path": "src/datastore/idempotency.py",
@@ -53,7 +53,7 @@
     },
     {
       "path": "migrations/README",
-      "sha": "31595cf53626af9e",
+      "sha": "85e33379b6309468",
       "summary": "Generic single-database configuration."
     },
     {
@@ -62,8 +62,13 @@
       "summary": "\"\"\"${message}"
     },
     {
+      "path": "migrations/versions/0001_initial.py",
+      "sha": "c198c2345b57a9fb",
+      "summary": "\"\"\"Initial schema for market-data-store"
+    },
+    {
       "path": "cursorrules/index.mdc",
-      "sha": "29e30ad227814c80",
+      "sha": "0a74f2e6a6dd20f2",
       "summary": "# Always-Active Rules (market-data-store)"
     },
     {
@@ -73,48 +78,48 @@
     },
     {
       "path": "cursorrules/solution_manifest.json",
-      "sha": "2c8869e98cbf42dc",
+      "sha": "d1f7057a28465f3f",
       "summary": "{"
     },
     {
       "path": "cursorrules/rules/api_control_plane.mdc",
-      "sha": "079dfc2793743b48",
+      "sha": "dedf32997c3826c3",
       "summary": "# Rule: API Control-Plane"
     },
     {
       "path": "cursorrules/rules/coding_standards.mdc",
-      "sha": "3a5bed1fb21fdd9f",
+      "sha": "9aba7a6714c2f2de",
       "summary": "# Rule: Coding Standards"
     },
     {
       "path": "cursorrules/rules/datastore_lib_rules.mdc",
-      "sha": "fe2f95e9653cd40e",
+      "sha": "d46f91edc496ba7d",
       "summary": "# Rule: Datastore Library"
     },
     {
       "path": "cursorrules/rules/environment_setup.mdc",
-      "sha": "ee054e65c0a68c70",
+      "sha": "28b5b265db476e75",
       "summary": "# Rule: Environment Setup"
     },
     {
       "path": "cursorrules/rules/migrations_rules.mdc",
-      "sha": "7c024a35520dcdaf",
+      "sha": "db6e6682a0055bca",
       "summary": "# Rule: Migrations Framework"
     },
     {
       "path": "cursorrules/rules/policies_aggregates.mdc",
-      "sha": "6ac7c2eda14ce49b",
+      "sha": "6e42fd97a39673ea",
       "summary": "# Rule: Timescale Policies & Aggregates"
     },
     {
-      "path": "cursorrules/rules/solution_lookup.mdc",
-      "sha": "c23a0341fe3445c0",
-      "summary": "# Rule: Solution Lookup"
+      "path": "cursorrules/rules/readme_generation.mdc",
+      "sha": "fe32c752c46a7913",
+      "summary": "# README Generation Rules"
     },
     {
-      "path": "cursorrules/rules/readme_generation.mdc",
-      "sha": "new_rule_sha",
-      "summary": "# Rule: README Generation"
+      "path": "cursorrules/rules/solution_lookup.mdc",
+      "sha": "d00503caa058af2e",
+      "summary": "# Rule: Solution Lookup"
     }
   ]
 }

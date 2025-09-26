@@ -1,7 +1,7 @@
 """Initial schema for market-data-store
 
 Revision ID: 0001_initial
-Revises: 
+Revises:
 Create Date: 2025-01-25
 
 """
@@ -9,7 +9,6 @@ Create Date: 2025-01-25
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-import uuid
 
 # revision identifiers, used by Alembic
 revision = "0001_initial"
@@ -21,12 +20,17 @@ depends_on = None
 def upgrade() -> None:
     # Extensions
     op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
-    op.execute("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"")
+    op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
 
     # Tenants
     op.create_table(
         "tenants",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("tenant_id", sa.String(50), nullable=False, unique=True),
         sa.Column("name", sa.String(255)),
         sa.Column("created_at", sa.TIMESTAMP(timezone=True), server_default=sa.text("NOW()")),
@@ -59,7 +63,12 @@ def upgrade() -> None:
     # Bars
     op.create_table(
         "bars",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("tenants.id")),
         sa.Column("symbol", sa.String(20), nullable=False),
         sa.Column("timeframe", sa.String(10), nullable=False),
@@ -79,7 +88,12 @@ def upgrade() -> None:
     # Fundamentals
     op.create_table(
         "fundamentals",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("tenants.id")),
         sa.Column("symbol", sa.String(20), nullable=False),
         sa.Column("asof", sa.TIMESTAMP(timezone=True), nullable=False),
@@ -97,7 +111,12 @@ def upgrade() -> None:
     # News
     op.create_table(
         "news",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("tenants.id")),
         sa.Column("symbol", sa.String(20)),
         sa.Column("title", sa.Text, nullable=False),
@@ -114,7 +133,12 @@ def upgrade() -> None:
     # Options Snap
     op.create_table(
         "options_snap",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("tenants.id")),
         sa.Column("symbol", sa.String(20), nullable=False),
         sa.Column("expiry", sa.Date, nullable=False),
@@ -131,10 +155,13 @@ def upgrade() -> None:
         sa.Column("created_at", sa.TIMESTAMP(timezone=True), server_default=sa.text("NOW()")),
         sa.UniqueConstraint("symbol", "expiry", "option_type", "strike", "ts", name="uq_options"),
     )
-    op.create_index("ix_options_symbol_expiry_ts", "options_snap", ["symbol", "expiry", "ts"], unique=False)
+    op.create_index(
+        "ix_options_symbol_expiry_ts", "options_snap", ["symbol", "expiry", "ts"], unique=False
+    )
 
     # Create updated_at triggers for all tables
-    op.execute("""
+    op.execute(
+        """
         CREATE OR REPLACE FUNCTION update_updated_at_column()
         RETURNS TRIGGER AS $$
         BEGIN
@@ -142,15 +169,26 @@ def upgrade() -> None:
             RETURN NEW;
         END;
         $$ language 'plpgsql';
-    """)
+    """
+    )
 
     # Apply triggers to all tables with updated_at
-    for table in ["tenants", "jobs_outbox", "api_config", "bars", "fundamentals", "news", "options_snap"]:
-        op.execute(f"""
-            CREATE TRIGGER update_{table}_updated_at 
-            BEFORE UPDATE ON {table} 
+    for table in [
+        "tenants",
+        "jobs_outbox",
+        "api_config",
+        "bars",
+        "fundamentals",
+        "news",
+        "options_snap",
+    ]:
+        op.execute(
+            f"""
+            CREATE TRIGGER update_{table}_updated_at
+            BEFORE UPDATE ON {table}
             FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-        """)
+        """
+        )
 
     # Enable Row Level Security on fact tables
     for table in ["bars", "fundamentals", "news", "options_snap"]:
@@ -158,11 +196,13 @@ def upgrade() -> None:
 
     # Create RLS policies for tenant isolation
     for table in ["bars", "fundamentals", "news", "options_snap"]:
-        op.execute(f"""
+        op.execute(
+            f"""
             CREATE POLICY tenant_isolation_{table} ON {table}
             FOR ALL TO PUBLIC
             USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
-        """)
+        """
+        )
 
     # Views
     op.execute(
@@ -203,13 +243,21 @@ def downgrade() -> None:
     op.execute("DROP VIEW IF EXISTS job_queue_health")
     op.execute("DROP VIEW IF EXISTS data_freshness")
     op.execute("DROP VIEW IF EXISTS latest_prices")
-    
+
     # Drop triggers
-    for table in ["tenants", "jobs_outbox", "api_config", "bars", "fundamentals", "news", "options_snap"]:
+    for table in [
+        "tenants",
+        "jobs_outbox",
+        "api_config",
+        "bars",
+        "fundamentals",
+        "news",
+        "options_snap",
+    ]:
         op.execute(f"DROP TRIGGER IF EXISTS update_{table}_updated_at ON {table}")
-    
+
     op.execute("DROP FUNCTION IF EXISTS update_updated_at_column()")
-    
+
     op.drop_table("options_snap")
     op.drop_table("news")
     op.drop_table("fundamentals")

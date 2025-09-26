@@ -13,8 +13,8 @@
     },
     {
       "path": "src/datastore/config.py",
-      "sha": "7fe21f818dcde915",
-      "summary": "from pydantic import BaseSettings, Field"
+      "sha": "efbcc11898e80cdc",
+      "summary": "from pydantic_settings import BaseSettings"
     },
     {
       "path": "src/datastore/idempotency.py",

@@ -1,12 +1,16 @@
-from pydantic import BaseSettings, Field
+from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = Field(
-        default="postgresql+psycopg2://postgres:postgres@localhost:5432/market_data"
-    )
-    ALEMBIC_INI: str = Field(default="alembic.ini")
+    DATABASE_URL: str
+    ADMIN_DATABASE_URL: str
+    APP_PORT: int = 8081
+    ALEMBIC_INI: str = "alembic.ini"
+
+    @property
+    def database_url(self) -> str:
+        return self.DATABASE_URL
 
     class Config:
         env_file = ".env"

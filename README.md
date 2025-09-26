@@ -7,9 +7,9 @@ Thin **control-plane** for the market data database:
 
 > No bulk reads/writes via HTTP. Orchestrator writes via the `datastore` library; readers query DB directly or via a future analytics API.
 
-## 📂 Project Layout
+## 📂 Project Layout & Description
 
-This section provides visibility into the repository structure for quick navigation and understanding of the codebase organization.
+Below is a snapshot of this repo's structure, with commentary, to help new contributors and automation tools (like Cursor) navigate the code.
 
 ```bash
 market-data-store/
@@ -19,21 +19,21 @@ market-data-store/
 ├── Makefile                       # Build and deployment automation
 ├── pyproject.toml                 # Python project configuration and dependencies
 ├── README.md                      # Project documentation
-├── cursorrules/                   # IDE rules and project guidelines
+├── cursorrules/                   # Cursor rules definitions
 │   ├── index.mdc                  # Main rules index
 │   ├── README.md                  # Rules documentation
 │   ├── solution_manifest.json     # Asset lookup configuration
 │   └── rules/                     # Task-specific rule definitions
 ├── docker/                        # Docker-related files
-│   └── initdb.d/
+│   └── initdb.d/                  # Initial SQL scripts for DB setup
 │       └── 00_timescale.sql       # TimescaleDB initialization script
-├── migrations/                    # Database migration files
+├── migrations/                    # Alembic migration files
 │   ├── env.py                     # Alembic environment configuration
 │   ├── script.py.mako             # Migration template
 │   └── versions/                  # Migration version files
-├── src/datastore/                 # Main Python package
+├── src/datastore/                 # Data access, read/write, CLI for migrations
 │   ├── __init__.py                # Package initialization
-│   ├── aggregates.py              # Continuous aggregates definitions
+│   ├── aggregates.py            # Continuous aggregates definitions
 │   ├── cli.py                     # Command-line interface (migrations, policies, seeds)
 │   ├── config.py                  # Application configuration and settings
 │   ├── idempotency.py             # Idempotency helpers for conflict handling
@@ -42,6 +42,8 @@ market-data-store/
 │   ├── writes.py                  # Write operations (upserts/batch writers)
 │   └── service/                   # FastAPI service layer
 │       └── app.py                 # FastAPI application with admin endpoints
-└── tools/                         # Development and build tools
+└── tools/                         # Auxiliary scripts, CLI utilities
     └── build_solution_manifest.py # Solution manifest builder
 ```
+
+> **Cursor**: You can regenerate this section automatically when the folder structure changes.

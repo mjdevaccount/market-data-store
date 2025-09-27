@@ -10,13 +10,13 @@ APP_PORT ?= 8081
 PGHOST ?= localhost
 PGPORT ?= 5432
 PGUSER ?= postgres
-PGDATABASE ?= market_data   # <- matches .env (underscore, not marketdata)
+PGDATABASE ?= market_data   # matches .env (underscore)
 
 # Docker Compose shortcut
 DC := docker compose
 
 .PHONY: help dev up down reset logs run migrate seed policies fmt lint test \
-        psql psql-local psql-docker db-shell status db-ready
+        psql psql-local psql-docker db-shell status db-ready init-db
 
 help:
 	@echo "Targets:"
@@ -26,8 +26,8 @@ help:
 	@echo "  reset       - docker compose down -v (NUKES volumes) then up"
 	@echo "  logs        - tail docker logs"
 	@echo "  run         - start FastAPI dev server on APP_PORT=$(APP_PORT)"
-	@echo "  migrate     - run datastore.cli migrate"
-	@echo "  seed        - run datastore.cli seed"
+	@echo "  migrate     - run datastore.cli migrate (waits for DB)"
+	@echo "  seed        - run datastore.cli seed (waits for DB)"
 	@echo "  policies    - run datastore.cli policies"
 	@echo "  fmt         - ruff fix + black format"
 	@echo "  lint        - ruff check + black --check"
@@ -36,6 +36,7 @@ help:
 	@echo "  psql-local  - use local Windows psql via host port (requires psql in PATH)"
 	@echo "  db-shell    - sh inside DB container"
 	@echo "  db-ready    - wait until Postgres is healthy"
+	@echo "  init-db     - db-ready -> migrate -> seed -> policies"
 	@echo "  status      - docker ps filter for md_postgres"
 
 # ----- Python dev -----
@@ -65,10 +66,11 @@ run:
 	uvicorn datastore.service.app:app --reload --port $(APP_PORT)
 
 # ----- App maintenance -----
-migrate:
+# Make these safe: they will wait for DB before running
+migrate: db-ready
 	python -m datastore.cli migrate
 
-seed:
+seed: db-ready
 	python -m datastore.cli seed
 
 policies:
@@ -105,9 +107,12 @@ db-shell:
 
 # Wait until Postgres is healthy before running migrations/seed
 db-ready:
-	@echo "Waiting for Postgres to be ready at $(PGHOST):$(PGPORT)..."
-	@until docker exec md_postgres pg_isready -U $(PGUSER) -d $(PGDATABASE) > /dev/null 2>&1; do \
-		sleep 1; \
-		echo "Still waiting..."; \
-	done
-	@echo "Postgres is ready!"
+	@powershell -NoProfile -Command "while (-not (docker exec md_postgres pg_isready -U $(PGUSER) -d $(PGDATABASE) | Select-String 'accepting connections' -Quiet)) { Start-Sleep -Seconds 1; Write-Host 'Still waiting...'; }; Write-Host 'Postgres is ready!'"
+
+# Chain everything for a single-shot DB init
+init-db:
+	$(MAKE) db-ready
+	$(MAKE) migrate
+	$(MAKE) seed
+	$(MAKE) policies
+	@echo "DB initialization complete."

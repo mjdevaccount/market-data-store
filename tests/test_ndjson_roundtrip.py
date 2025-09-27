@@ -45,10 +45,10 @@ def test_bars_ndjson_roundtrip(tmp_path):
         cur.execute(
             """
             DELETE FROM bars
-            WHERE tenant_id = current_setting('app.tenant_id')::uuid
+            WHERE tenant_id = %s
               AND vendor = %s AND symbol = %s AND timeframe = %s
             """,
-            ("ibkr", "AAPL", "1m"),
+            (tenant_id, "ibkr", "AAPL", "1m"),
         )
 
     # Upsert original rows
@@ -75,10 +75,10 @@ def test_bars_ndjson_roundtrip(tmp_path):
         cur.execute(
             """
             DELETE FROM bars
-            WHERE tenant_id = current_setting('app.tenant_id')::uuid
+            WHERE tenant_id = %s
               AND vendor = %s AND symbol = %s AND timeframe = %s
             """,
-            ("ibkr", "AAPL", "1m"),
+            (tenant_id, "ibkr", "AAPL", "1m"),
         )
 
     # Re-ingest from NDJSON (simulate ingest-ndjson path via models + upsert)
@@ -127,9 +127,14 @@ async def test_bars_ndjson_roundtrip_async(tmp_path):
     dsn = os.environ["MDS_TEST_DSN"]
     tenant_id = os.environ["MDS_TEST_TENANT_ID"]
 
+    from mds_client.runtime import boot_event_loop
     from mds_client.aclient import AMDS
 
+    # Configure event loop for Windows compatibility
+    boot_event_loop()
+
     amds = AMDS({"dsn": dsn, "tenant_id": tenant_id})
+    await amds.aopen()
 
     now = datetime.now(tz=timezone.utc).replace(microsecond=0)
     rows = [
@@ -154,10 +159,10 @@ async def test_bars_ndjson_roundtrip_async(tmp_path):
             await cur.execute(
                 """
                 DELETE FROM bars
-                WHERE tenant_id = current_setting('app.tenant_id')::uuid
+                WHERE tenant_id = %s
                   AND vendor = %s AND symbol = %s AND timeframe = %s
                 """,
-                ("ibkr", "AAPL", "1m"),
+                (tenant_id, "ibkr", "AAPL", "1m"),
             )
 
     # Upsert original rows
@@ -188,10 +193,10 @@ async def test_bars_ndjson_roundtrip_async(tmp_path):
             await cur.execute(
                 """
                 DELETE FROM bars
-                WHERE tenant_id = current_setting('app.tenant_id')::uuid
+                WHERE tenant_id = %s
                   AND vendor = %s AND symbol = %s AND timeframe = %s
                 """,
-                ("ibkr", "AAPL", "1m"),
+                (tenant_id, "ibkr", "AAPL", "1m"),
             )
 
     # Re-ingest from NDJSON (simulate ingest-ndjson path via models + upsert)

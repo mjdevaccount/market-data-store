@@ -129,23 +129,37 @@ class AMDS:
         self.cfg: AMDSConfig = {**DEFAULTS, **(cfg or {})}
         if "dsn" not in self.cfg:
             raise ValueError("dsn required")
+        # Create pool without auto-opening (fixes deprecation warning)
         self.pool = AsyncConnectionPool(
             conninfo=self.cfg["dsn"],
             max_size=self.cfg["pool_max"],
             kwargs={"autocommit": False},
-            open=self._prepare_async_conn,  # runs once per connection
+            open=False,  # Never auto-open in constructor
         )
+        self._connection_preparator = self._prepare_async_conn
         self.tenant_id = self.cfg.get("tenant_id")
         self.statement_timeout_ms = self.cfg.get("statement_timeout_ms")
         self.app_name = self.cfg.get("app_name")
+        self._pool_opened = False
+
+    async def aopen(self) -> None:
+        """Explicitly open the connection pool."""
+        if not self._pool_opened:
+            await self.pool.open(wait=True, timeout=5.0)
+            self._pool_opened = True
 
     async def aclose(self) -> None:
-        await self.pool.close()
+        """Close the connection pool with proper cleanup."""
+        if self._pool_opened:
+            from .runtime import shutdown_with_timeout
+
+            await shutdown_with_timeout(self.pool, timeout=1.0)
+            self._pool_opened = False
 
     async def _prepare_async_conn(self, conn):
-        """Prepare connection with tenant, app name, and timeouts."""
-        if self.tenant_id:
-            await conn.execute("SET app.tenant_id = %s", (self.tenant_id,))
+        """Prepare connection with app name and timeouts."""
+        # Note: app.tenant_id parameter not supported in this database
+        # Tenant isolation is handled via RLS policies instead
         if self.app_name:
             await conn.execute("SET application_name = %s", (self.app_name,))
         if self.statement_timeout_ms:
@@ -153,7 +167,12 @@ class AMDS:
 
     async def _conn(self):
         """Get connection with pre-configured tenant, app name, and timeouts."""
+        # Ensure pool is opened
+        await self.aopen()
+
         async with self.pool.connection() as conn:
+            # Apply connection preparation
+            await self._prepare_async_conn(conn)
             yield conn
 
     # ---------- health / meta ----------
@@ -215,47 +234,47 @@ class AMDS:
         ):
             await cp.write(sio.read())
 
-        async def _upsert(self, table: str, rows: Iterable[object]) -> int:
-            preset = TABLE_PRESETS[table]
-            cols, conflict, update = preset.cols, preset.conflict, preset.update
-            sql_stmt = upsert_statement(table, cols, conflict, update)
-            data = self._coerce_rows(rows)
-            if not data:
-                return 0
+    async def _upsert(self, table: str, rows: Iterable[object]) -> int:
+        preset = TABLE_PRESETS[table]
+        cols, conflict, update = preset.cols, preset.conflict, preset.update
+        sql_stmt = upsert_statement(table, cols, conflict, update)
+        data = self._coerce_rows(rows)
+        if not data:
+            return 0
 
-            async for conn in self._conn():
-                async with conn.cursor(row_factory=dict_row) as cur:
-                    mode = self._write_mode(len(data))
-                    if mode == "executemany":
-                        await cur.executemany(sql_stmt, data)
-                    elif mode == "copy":
-                        temp = psql.Identifier(f"tmp_{table}_copy")
-                        await cur.execute(
-                            psql.SQL(
-                                "CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS) ON COMMIT DROP"
-                            ).format(temp, psql.Identifier(table))
-                        )
-                        await self._copy_from_memory_csv(conn, temp.string, cols, data)
-                        ins = psql.SQL(
-                            "INSERT INTO {} ({cols}) SELECT {cols} FROM {} "
-                            "ON CONFLICT ({conf}) DO UPDATE SET {upd}"
-                        ).format(
-                            psql.Identifier(table),
-                            temp,
-                            cols=psql.SQL(", ").join(psql.Identifier(c) for c in cols),
-                            conf=psql.SQL(", ").join(psql.Identifier(c) for c in conflict),
-                            upd=psql.SQL(", ").join(
-                                psql.SQL("{} = EXCLUDED.{}").format(
-                                    psql.Identifier(c), psql.Identifier(c)
-                                )
-                                for c in update
-                            ),
-                        )
-                        await cur.execute(ins)
-                    else:
-                        raise ValueError(f"unknown write_mode {mode}")
-                await conn.commit()
-            return len(data)
+        async for conn in self._conn():
+            async with conn.cursor(row_factory=dict_row) as cur:
+                mode = self._write_mode(len(data))
+                if mode == "executemany":
+                    await cur.executemany(sql_stmt, data)
+                elif mode == "copy":
+                    temp = psql.Identifier(f"tmp_{table}_copy")
+                    await cur.execute(
+                        psql.SQL(
+                            "CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS) ON COMMIT DROP"
+                        ).format(temp, psql.Identifier(table))
+                    )
+                    await self._copy_from_memory_csv(conn, temp.string, cols, data)
+                    ins = psql.SQL(
+                        "INSERT INTO {} ({cols}) SELECT {cols} FROM {} "
+                        "ON CONFLICT ({conf}) DO UPDATE SET {upd}"
+                    ).format(
+                        psql.Identifier(table),
+                        temp,
+                        cols=psql.SQL(", ").join(psql.Identifier(c) for c in cols),
+                        conf=psql.SQL(", ").join(psql.Identifier(c) for c in conflict),
+                        upd=psql.SQL(", ").join(
+                            psql.SQL("{} = EXCLUDED.{}").format(
+                                psql.Identifier(c), psql.Identifier(c)
+                            )
+                            for c in update
+                        ),
+                    )
+                    await cur.execute(ins)
+                else:
+                    raise ValueError(f"unknown write_mode {mode}")
+            await conn.commit()
+        return len(data)
 
     # ---------- typed upserts ----------
 

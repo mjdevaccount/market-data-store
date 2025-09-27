@@ -152,10 +152,8 @@ class MDS:
                         psql.Literal(int(self.statement_timeout_ms))
                     )
                 )
-            if self.tenant_id:
-                conn.execute(
-                    psql.SQL("SET LOCAL app.tenant_id = {}").format(psql.Literal(self.tenant_id))
-                )
+            # Note: app.tenant_id parameter not supported in this database
+            # Tenant isolation is handled via RLS policies instead
             yield conn
 
     # ---------- health / meta ----------

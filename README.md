@@ -157,9 +157,13 @@ pip install -r requirements-dev.txt
 Once installed, you can use the `mds_client` library in your projects:
 
 ```python
-# Basic usage
+# Basic usage with cross-platform compatibility
 from mds_client import MDS, Bar
+from mds_client.runtime import boot_event_loop
 from datetime import datetime, timezone
+
+# Configure event loop for Windows/Docker compatibility
+boot_event_loop()
 
 # Configure client
 mds = MDS({
@@ -193,10 +197,51 @@ mds ping
 mds write-bar --vendor ibkr --symbol AAPL --timeframe 1m --ts "2024-01-01T10:00:00Z" --close-price 150.5 --volume 1000
 ```
 
+## 🔧 Windows/Docker Compatibility
+
+This project includes comprehensive cross-platform compatibility for both Windows development and Linux/Docker production environments:
+
+### **Event Loop Configuration**
+- **Windows**: Automatically uses `WindowsSelectorEventLoopPolicy` for psycopg compatibility
+- **Linux/macOS**: Uses `uvloop` for enhanced performance when available
+- **Automatic**: No manual configuration required - just call `boot_event_loop()` early in your application
+
+### **Connection Pool Management**
+- **Explicit lifecycle**: Pools are never auto-opened, ensuring proper resource management
+- **Timeout-based cleanup**: Prevents hanging threads during shutdown
+- **Cross-platform**: Works consistently across Windows, Linux, and Docker
+
+### **Production Features**
+- **Health monitoring**: Comprehensive database health checks and Prometheus metrics
+- **Resource management**: Centralized resource cleanup with `AsyncExitStack`
+- **CLI tools**: Cross-platform command-line interface with health and metrics commands
+
+### **Usage Example**
+```python
+from mds_client.runtime import boot_event_loop
+from mds_client import MDS, AMDS
+
+# Configure for cross-platform compatibility
+boot_event_loop()
+
+# Sync client (works on all platforms)
+mds = MDS({"dsn": "postgresql://...", "tenant_id": "..."})
+
+# Async client (works on all platforms)
+async with AMDS({"dsn": "postgresql://...", "tenant_id": "..."}) as amds:
+    await amds.upsert_bars([...])
+```
+
 ### Testing Quickstart
 ```bash
 # Run NDJSON round-trip tests
 pytest -q tests/test_ndjson_roundtrip.py
+
+# Run all tests (cross-platform)
+pytest tests/ -v
+
+# Run Windows compatibility tests
+pytest tests/test_windows_compatibility.py -v
 ```
 
 ### Development Commands

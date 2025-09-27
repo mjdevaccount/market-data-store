@@ -16,6 +16,13 @@ from .batch import BatchProcessor, AsyncBatchProcessor, BatchConfig
 from .models import Bar, Fundamentals, News, OptionSnap
 from .utils import iter_ndjson, coerce_model
 from .sql import TABLE_PRESETS
+from .runtime import boot_event_loop, shutdown_with_timeout
+from .health import (
+    check_health,
+    check_health_with_retry,
+    get_prometheus_metrics,
+    get_metrics_summary,
+)
 
 app = typer.Typer(help="mds_client operational CLI")
 
@@ -70,6 +77,58 @@ def schema_version(dsn: str = dsn_opt(), tenant_id: str = tenant_opt()):
     mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
     ver = mds.schema_version()
     typer.echo(json.dumps({"schema_version": ver}, indent=2))
+
+
+@app.command("health")
+def health_check(
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
+    retry: bool = typer.Option(False, "--retry", help="Use retry logic for health check"),
+    format: str = typer.Option("json", "--format", help="Output format: json, prometheus"),
+):
+    """Comprehensive database health check with metrics."""
+
+    async def _health_check():
+        amds = AMDS({"dsn": dsn, "tenant_id": tenant_id, "pool_max": 5})
+        try:
+            await amds.aopen()
+
+            if retry:
+                result = await check_health_with_retry(amds)
+            else:
+                result = await check_health(amds)
+
+            if format == "prometheus":
+                metrics = get_prometheus_metrics()
+                if metrics:
+                    typer.echo(metrics)
+                else:
+                    typer.echo(
+                        "# Prometheus metrics not available (prometheus_client not installed)"
+                    )
+            else:
+                typer.echo(json.dumps(result, indent=2, default=str))
+
+        finally:
+            await amds.aclose()
+
+    asyncio.run(_health_check())
+
+
+@app.command("metrics")
+def metrics(
+    format: str = typer.Option("json", "--format", help="Output format: json, prometheus"),
+):
+    """Get current metrics summary."""
+    if format == "prometheus":
+        metrics = get_prometheus_metrics()
+        if metrics:
+            typer.echo(metrics)
+        else:
+            typer.echo("# Prometheus metrics not available (prometheus_client not installed)")
+    else:
+        summary = get_metrics_summary()
+        typer.echo(json.dumps(summary, indent=2, default=str))
 
 
 @app.command("latest-prices")
@@ -280,19 +339,24 @@ async def _ingest_ndjson_async(
 
     cfg = BatchConfig(max_rows=max_rows, max_ms=max_ms, max_bytes=max_bytes)
     amds = AMDS({"dsn": dsn, "tenant_id": tenant_id, "pool_max": 10})
-    async with AsyncBatchProcessor(amds, cfg) as bp:
-        add_fn = {
-            "bars": bp.add_bar,
-            "fundamentals": bp.add_fundamental,
-            "news": bp.add_news,
-            "options": bp.add_option,
-        }[kind_l]
-        n = 0
-        for obj in iter_ndjson(path):
-            await add_fn(coerce_model(kind_l, obj))
-            n += 1
-    # Auto-flush on exit
-    typer.echo(json.dumps({"ingested": n, "flushed": "auto"}, default=str, indent=2))
+
+    try:
+        async with AsyncBatchProcessor(amds, cfg) as bp:
+            add_fn = {
+                "bars": bp.add_bar,
+                "fundamentals": bp.add_fundamental,
+                "news": bp.add_news,
+                "options": bp.add_option,
+            }[kind_l]
+            n = 0
+            for obj in iter_ndjson(path):
+                await add_fn(coerce_model(kind_l, obj))
+                n += 1
+        # Auto-flush on exit
+        typer.echo(json.dumps({"ingested": n, "flushed": "auto"}, default=str, indent=2))
+    finally:
+        # Ensure proper cleanup
+        await shutdown_with_timeout(amds.pool)
 
 
 # ---------------------------
@@ -816,6 +880,9 @@ def dump_ndjson_async_all(
 
     asyncio.run(_run())
 
+
+# Configure event loop on module import
+boot_event_loop()
 
 # If this module is run directly:
 if __name__ == "__main__":  # pragma: no cover

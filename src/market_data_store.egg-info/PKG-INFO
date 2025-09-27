@@ -1,21 +1,26 @@
 Metadata-Version: 2.4
 Name: market-data-store
 Version: 0.1.0
-Summary: Persistence and CQRS-lite store for market data (ticks, bars, options, fundamentals).
-Author: Matt
+Summary: Data store control-plane (schema, migrations, policies, ops) for market-data.
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
-Requires-Dist: psycopg[binary]>=3.1
+Requires-Dist: fastapi>=0.115
+Requires-Dist: uvicorn[standard]>=0.30
 Requires-Dist: sqlalchemy>=2.0
+Requires-Dist: asyncpg>=0.29
 Requires-Dist: alembic>=1.13
+Requires-Dist: psycopg[binary]>=3.2
+Requires-Dist: psycopg-pool>=3.2
+Requires-Dist: typer>=0.12
 Requires-Dist: pydantic>=2.7
-Requires-Dist: loguru>=0.7
+Requires-Dist: pydantic-settings>=2.0
 Requires-Dist: python-dotenv>=1.0
+Requires-Dist: prometheus-client>=0.20
+Requires-Dist: loguru>=0.7
 Provides-Extra: dev
-Requires-Dist: pytest<9,>=8.2; extra == "dev"
-Requires-Dist: ruff<1,>=0.6; extra == "dev"
-Requires-Dist: black<25,>=24.8; extra == "dev"
-Requires-Dist: mypy<2,>=1.11; extra == "dev"
+Requires-Dist: ruff>=0.13.2; extra == "dev"
+Requires-Dist: black>=25.9.0; extra == "dev"
+Requires-Dist: pre-commit>=4.3.0; extra == "dev"
 
 # 🚀 market-data-store
 
@@ -116,18 +121,43 @@ uvicorn datastore.service.app:app --host 0.0.0.0 --port 8000 --factory
 
 ⚙️ **Project Config** → [`pyproject.toml`](pyproject.toml)
 
+## 📋 Releases
+
+### 🏷️ Current Release: [v0.1.0](https://github.com/mjdevaccount/market-data-store/releases/tag/v0.1.0)
+
+**What's included:**
+- ✅ Complete `mds_client` library with sync/async APIs
+- ✅ Production-ready batch processing and backup/restore
+- ✅ Comprehensive CLI with all operational commands
+- ✅ Full documentation and troubleshooting guides
+- ✅ RLS security and tenant isolation
+
+### 📦 Installation from Release
+```bash
+# Install specific version
+pip install git+https://github.com/mjdevaccount/market-data-store.git@v0.1.0#subdirectory=src
+
+# Install latest version
+pip install git+https://github.com/mjdevaccount/market-data-store.git#subdirectory=src
+```
+
 ## 🚀 Quick Start
 
-### Prerequisites
-- Python 3.11+
-- PostgreSQL 13+ with **TimescaleDB extension** (required)
-- Virtual environment
+### 📦 Installation
 
-### Installation
+#### Option 1: Install from Git (Recommended)
+```bash
+# Install the mds_client library directly from this repository
+pip install git+https://github.com/mjdevaccount/market-data-store.git@v0.1.0#subdirectory=src
 
+# Or install the latest version
+pip install git+https://github.com/mjdevaccount/market-data-store.git#subdirectory=src
+```
+
+#### Option 2: Development Setup
 ```powershell
-# Clone and setup
-git clone <repository>
+# Clone and setup for development
+git clone https://github.com/mjdevaccount/market-data-store.git
 cd market-data-store
 
 # Create and activate virtual environment
@@ -139,6 +169,52 @@ pip install -r requirements.txt
 
 # For development
 pip install -r requirements-dev.txt
+```
+
+### Prerequisites
+- Python 3.11+
+- PostgreSQL 13+ with **TimescaleDB extension** (required)
+- Virtual environment
+
+### 🎯 Using the Released Package
+
+Once installed, you can use the `mds_client` library in your projects:
+
+```python
+# Basic usage
+from mds_client import MDS, Bar
+from datetime import datetime, timezone
+
+# Configure client
+mds = MDS({
+    "dsn": "postgresql://user:pass@host:port/db",
+    "tenant_id": "your-tenant-uuid"
+})
+
+# Write market data
+bar = Bar(
+    tenant_id="your-tenant-uuid",
+    vendor="ibkr",
+    symbol="AAPL",
+    timeframe="1m",
+    ts=datetime.now(timezone.utc),
+    close_price=150.5,
+    volume=1000
+)
+
+mds.upsert_bars([bar])
+```
+
+```bash
+# Use the CLI
+export MDS_DSN="postgresql://user:pass@host:port/db"
+export MDS_TENANT_ID="your-tenant-uuid"
+
+# Test connection
+mds ping
+
+# Write data
+mds write-bar --vendor ibkr --symbol AAPL --timeframe 1m --ts "2024-01-01T10:00:00Z" --close-price 150.5 --volume 1000
 ```
 
 ### Testing Quickstart
@@ -233,6 +309,96 @@ export MDS_DSN="postgresql://user:pass@host:port/db"
 export MDS_TENANT_ID="uuid-string"
 mds ping  # Uses env vars automatically
 ```
+
+## 🔗 Market Data Store Integration
+
+The `market-data-store` package is a **core dependency** for Market Data Core, providing:
+
+### 📦 **Python Package Integration**
+```python
+# Import the market data store package
+import market_data_store
+
+# Access version information
+print(f"Market Data Store version: {market_data_store.__version__}")
+
+# The package provides access to all CLI operations and Python library
+from mds_client import MDS, AMDS, Bar, Fundamentals, News, OptionSnap
+```
+
+### 🛠️ **Available Operations**
+
+The `market-data-store` package provides comprehensive data persistence capabilities:
+
+#### **Data Types Supported**
+- **Bars/OHLCV**: Time-series price data with multiple timeframes
+- **Fundamentals**: Company financial data (assets, liabilities, earnings)
+- **News**: Market news with sentiment analysis
+- **Options**: Options market data with Greeks (delta, gamma, IV)
+
+#### **CLI Operations** (via `mds` command)
+```bash
+# Health & Schema
+mds ping                    # Database connectivity check
+mds schema-version         # Get current schema version
+mds latest-prices          # Get latest prices for symbols
+
+# Individual Write Operations
+mds write-bar              # Write single OHLCV bar
+mds write-fundamental      # Write company fundamentals
+mds write-news             # Write news article
+mds write-option           # Write options data
+
+# Bulk Operations
+mds ingest-ndjson          # Bulk ingest from NDJSON files
+mds ingest-ndjson-async    # Async bulk ingest
+
+# Export/Import Operations
+mds dump                    # Export to CSV
+mds restore                 # Import from CSV
+mds restore-async           # Async CSV import
+mds dump-ndjson             # Export to NDJSON
+mds dump-ndjson-async       # Async NDJSON export
+
+# Job Queue Operations
+mds enqueue-job             # Queue background jobs
+```
+
+#### **Python Library Usage**
+```python
+# Synchronous operations
+from mds_client import MDS
+mds = MDS({"dsn": "postgresql://...", "tenant_id": "uuid"})
+
+# Write market data
+mds.upsert_bars([bar_data])
+mds.upsert_fundamentals([fundamental_data])
+mds.upsert_news([news_data])
+mds.upsert_options([option_data])
+
+# Read operations
+latest_prices = mds.latest_prices(["AAPL", "MSFT"], vendor="ibkr")
+
+# Async operations
+from mds_client import AMDS, AsyncBatchProcessor
+amds = AMDS({"dsn": "postgresql://...", "tenant_id": "uuid", "pool_max": 10})
+```
+
+### 🏗️ **Architecture Benefits**
+
+- **Tenant Isolation**: Row Level Security (RLS) ensures data separation
+- **TimescaleDB Integration**: Optimized for time-series data
+- **Connection Pooling**: High-performance async/sync connection management
+- **Batch Processing**: Efficient bulk operations with configurable batching
+- **Idempotent Operations**: Safe retry and upsert semantics
+- **Production Ready**: Comprehensive error handling, logging, and monitoring
+
+### 📋 **Quick Reference**
+
+For detailed operation documentation, see:
+- **CLI Operations**: [`cursorrules/rules/market_data_store_operations.mdc`](cursorrules/rules/market_data_store_operations.mdc)
+- **Python Library**: [`src/mds_client/`](src/mds_client/)
+- **Data Models**: [`src/mds_client/models.py`](src/mds_client/models.py)
 
 ## 📚 Client Library Documentation
 

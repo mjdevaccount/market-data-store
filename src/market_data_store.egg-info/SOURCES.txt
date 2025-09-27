@@ -13,6 +13,7 @@ src/market_data_store/__init__.py
 src/market_data_store.egg-info/PKG-INFO
 src/market_data_store.egg-info/SOURCES.txt
 src/market_data_store.egg-info/dependency_links.txt
+src/market_data_store.egg-info/entry_points.txt
 src/market_data_store.egg-info/requires.txt
 src/market_data_store.egg-info/top_level.txt
 src/market_data_store/ingestion/__init__.py
@@ -24,8 +25,10 @@ src/mds_client/batch.py
 src/mds_client/cli.py
 src/mds_client/client.py
 src/mds_client/errors.py
+src/mds_client/health.py
 src/mds_client/models.py
 src/mds_client/rls.py
+src/mds_client/runtime.py
 src/mds_client/sql.py
 src/mds_client/utils.py
 tests/test_ndjson_roundtrip.py

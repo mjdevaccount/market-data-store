@@ -7,6 +7,10 @@ This demonstrates how Core would import and use the mds_client library.
 import asyncio
 from datetime import datetime, date
 from mds_client import MDS, AMDS, Bar, Fundamentals, News, OptionSnap
+from mds_client.runtime import boot_event_loop
+
+# Configure event loop for cross-platform compatibility
+boot_event_loop()
 
 
 def sync_example():
@@ -75,71 +79,82 @@ async def async_example():
         "dsn": "postgresql://postgres:postgres@127.0.0.1:5432/market_data"
         "?application_name=core-async"
         "&options=-c%20app.tenant_id%3D6b6a6a8a-3e2e-4a8e-9c3d-9ef0ffa4d111",
-        "pool_min": 2,
         "pool_max": 10,
     }
 
-    # Create async client
+    # Create async client with proper resource management
     amds = AMDS(cfg)
 
-    # Health check
-    health = await amds.health()
-    print(f"Health: {health}")
+    try:
+        # Explicitly open the pool
+        await amds.aopen()
 
-    # Write options snapshots
-    options = [
-        OptionSnap(
-            tenant_id="6b6a6a8a-3e2e-4a8e-9c3d-9ef0ffa4d111",
-            vendor="ibkr",
-            symbol="AAPL",
-            expiry=date(2024, 12, 20),
-            option_type="C",
-            strike=200.0,
-            ts=datetime.now(),
-            iv=0.34,
-            delta=0.55,
-            gamma=0.012,
-            oi=123,
-            volume=45,
-            spot=191.25,
-        )
-    ]
+        # Health check
+        health = await amds.health()
+        print(f"Health: {health}")
 
-    count = await amds.upsert_options(options)
-    print(f"Inserted {count} options")
+        # Write options snapshots
+        options = [
+            OptionSnap(
+                tenant_id="6b6a6a8a-3e2e-4a8e-9c3d-9ef0ffa4d111",
+                vendor="ibkr",
+                symbol="AAPL",
+                expiry=date(2024, 12, 20),
+                option_type="C",
+                strike=200.0,
+                ts=datetime.now(),
+                iv=0.34,
+                delta=0.55,
+                gamma=0.012,
+                oi=123,
+                volume=45,
+                spot=191.25,
+            )
+        ]
 
-    # Write fundamentals
-    fundamentals = [
-        Fundamentals(
-            tenant_id="6b6a6a8a-3e2e-4a8e-9c3d-9ef0ffa4d111",
-            vendor="ibkr",
-            symbol="AAPL",
-            asof=datetime.now(),
-            total_assets=1000000.0,
-            total_liabilities=500000.0,
-            net_income=100000.0,
-            eps=6.0,
-        )
-    ]
+        count = await amds.upsert_options(options)
+        print(f"Inserted {count} options")
 
-    count = await amds.upsert_fundamentals(fundamentals)
-    print(f"Inserted {count} fundamentals")
+        # Write fundamentals
+        fundamentals = [
+            Fundamentals(
+                tenant_id="6b6a6a8a-3e2e-4a8e-9c3d-9ef0ffa4d111",
+                vendor="ibkr",
+                symbol="AAPL",
+                asof=datetime.now(),
+                total_assets=1000000.0,
+                total_liabilities=500000.0,
+                net_income=100000.0,
+                eps=6.0,
+            )
+        ]
 
-    # Write news
-    news = [
-        News(
-            tenant_id="6b6a6a8a-3e2e-4a8e-9c3d-9ef0ffa4d111",
-            vendor="reuters",
-            title="Apple reports strong Q4 earnings",
-            published_at=datetime.now(),
-            symbol="AAPL",
-            url="https://example.com/news/apple-earnings",
-            sentiment_score=0.8,
-        )
-    ]
+        count = await amds.upsert_fundamentals(fundamentals)
+        print(f"Inserted {count} fundamentals")
 
-    count = await amds.upsert_news(news)
-    print(f"Inserted {count} news items")
+        # Write news
+        news = [
+            News(
+                tenant_id="6b6a6a8a-3e2e-4a8e-9c3d-9ef0ffa4d111",
+                vendor="reuters",
+                title="Apple reports strong Q4 earnings",
+                published_at=datetime.now(),
+                symbol="AAPL",
+                url="https://example.com/news/apple-earnings",
+                sentiment_score=0.8,
+            )
+        ]
+
+        count = await amds.upsert_news(news)
+        print(f"Inserted {count} news items")
+
+        # Fetch latest prices
+        prices = await amds.latest_prices(["AAPL", "MSFT"], vendor="ibkr")
+        print(f"Latest prices: {[(p['symbol'], p['price']) for p in prices]}")
+
+    finally:
+        # Ensure proper cleanup
+        await amds.aclose()
 
 
 def batch_example():

@@ -1,12 +1,29 @@
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Iterable, Mapping, Optional
+
 from psycopg import sql as psql
 
-# Canonical column sets + conflict/update specs (match your Timescale schema)
-TABLE_PRESETS: dict[str, dict] = {
-    "bars": {
-        "cols": [
+
+@dataclass(frozen=True)
+class TablePreset:
+    # Column order for SELECT/COPY/INSERT (no "id" to keep round-trips stable)
+    cols: tuple[str, ...]
+    # Conflict columns must match the table PK (time-first)
+    conflict: tuple[str, ...]
+    # Updatable (non-PK) columns for ON CONFLICT DO UPDATE
+    update: tuple[str, ...]
+    # Name of the time column for filters and ORDER BY
+    time_col: str
+    # Optional filterable columns present in this table
+    filter_cols: tuple[str, ...] = ()
+
+
+TABLE_PRESETS: dict[str, TablePreset] = {
+    "bars": TablePreset(
+        cols=(
             "ts",
             "tenant_id",
             "vendor",
@@ -17,13 +34,14 @@ TABLE_PRESETS: dict[str, dict] = {
             "low_price",
             "close_price",
             "volume",
-        ],
-        "conflict": ["ts", "tenant_id", "vendor", "symbol", "timeframe"],
-        "update": ["open_price", "high_price", "low_price", "close_price", "volume"],
-        "time_col": "ts",
-    },
-    "fundamentals": {
-        "cols": [
+        ),
+        conflict=("ts", "tenant_id", "vendor", "symbol", "timeframe"),
+        update=("open_price", "high_price", "low_price", "close_price", "volume"),
+        time_col="ts",
+        filter_cols=("vendor", "symbol", "timeframe"),
+    ),
+    "fundamentals": TablePreset(
+        cols=(
             "asof",
             "tenant_id",
             "vendor",
@@ -32,28 +50,30 @@ TABLE_PRESETS: dict[str, dict] = {
             "total_liabilities",
             "net_income",
             "eps",
-        ],
-        "conflict": ["asof", "tenant_id", "vendor", "symbol"],
-        "update": ["total_assets", "total_liabilities", "net_income", "eps"],
-        "time_col": "asof",
-    },
-    "news": {
-        "cols": [
+        ),
+        conflict=("asof", "tenant_id", "vendor", "symbol"),
+        update=("total_assets", "total_liabilities", "net_income", "eps"),
+        time_col="asof",
+        filter_cols=("vendor", "symbol"),
+    ),
+    "news": TablePreset(
+        cols=(
             "published_at",
             "tenant_id",
             "vendor",
-            "id",
             "symbol",
             "title",
             "url",
             "sentiment_score",
-        ],
-        "conflict": ["published_at", "tenant_id", "vendor", "id"],
-        "update": ["symbol", "title", "url", "sentiment_score"],
-        "time_col": "published_at",
-    },
-    "options_snap": {
-        "cols": [
+        ),
+        # NOTE: PK = (published_at, tenant_id, vendor, id). We omit "id" from exports for stable round-trips.
+        conflict=("published_at", "tenant_id", "vendor", "id"),
+        update=("symbol", "title", "url", "sentiment_score"),
+        time_col="published_at",
+        filter_cols=("vendor", "symbol"),
+    ),
+    "options_snap": TablePreset(
+        cols=(
             "ts",
             "tenant_id",
             "vendor",
@@ -67,108 +87,80 @@ TABLE_PRESETS: dict[str, dict] = {
             "oi",
             "volume",
             "spot",
-        ],
-        "conflict": ["ts", "tenant_id", "vendor", "symbol", "expiry", "option_type", "strike"],
-        "update": ["iv", "delta", "gamma", "oi", "volume", "spot"],
-        "time_col": "ts",
-    },
+        ),
+        conflict=("ts", "tenant_id", "vendor", "symbol", "expiry", "option_type", "strike"),
+        update=("iv", "delta", "gamma", "oi", "volume", "spot"),
+        time_col="ts",
+        filter_cols=("vendor", "symbol"),
+    ),
 }
 
 
-def upsert_statement(
-    table: str,
-    cols: Sequence[str],
-    conflict_cols: Sequence[str],
-    update_cols: Sequence[str],
-) -> psql.Composed:
-    """INSERT ... ON CONFLICT ... DO UPDATE with named parameters (%(name)s)."""
-    ins_cols = psql.SQL(", ").join(psql.Identifier(c) for c in cols)
-    ins_vals = psql.SQL(", ").join(psql.Placeholder(c) for c in cols)
-    conflict = psql.SQL(", ").join(psql.Identifier(c) for c in conflict_cols)
-    setlist = psql.SQL(", ").join(
-        psql.SQL("{} = EXCLUDED.{}").format(psql.Identifier(c), psql.Identifier(c))
-        for c in update_cols
-    )
-    return psql.SQL("INSERT INTO {} ({}) VALUES ({}) ON CONFLICT ({}) DO UPDATE SET {}").format(
-        psql.Identifier(table), ins_cols, ins_vals, conflict, setlist
-    )
+def _lit(v) -> psql.SQL:
+    """Safely literalize a value for SQL composition."""
+    return psql.Literal(v)
 
 
-def latest_prices_select(symbols: Iterable[str], vendor: str, tenant_id: str) -> psql.Composed:
-    # Uses your view latest_prices(tenant_id,vendor,symbol,price,price_timestamp)
-    return psql.SQL(
-        "SELECT vendor, symbol, price, price_timestamp "
-        "FROM latest_prices WHERE tenant_id = {tid} AND vendor = {v} AND symbol = ANY({syms})"
-    ).format(
-        tid=psql.Literal(tenant_id),
-        v=psql.Literal(vendor),
-        syms=psql.Literal(list({s.upper() for s in symbols})),
-    )
-
-
-def bars_window_select(
-    *, symbol: str, timeframe: str, start: str, end: str, vendor: str
-) -> psql.Composed:
-    return psql.SQL(
-        "SELECT ts, tenant_id, vendor, symbol, timeframe, open_price, high_price, "
-        "low_price, close_price, volume "
-        "FROM bars "
-        "WHERE vendor = {v} AND symbol = {s} AND timeframe = {tf} "
-        "AND ts >= {start} AND ts < {end} "
-        "ORDER BY ts"
-    ).format(
-        v=psql.Literal(vendor),
-        s=psql.Literal(symbol.upper()),
-        tf=psql.Literal(timeframe),
-        start=psql.Literal(start),
-        end=psql.Literal(end),
-    )
+def _ident(n: str) -> psql.Identifier:
+    return psql.Identifier(n)
 
 
 def build_ndjson_select(
     table: str,
-    cols: Sequence[str],
     *,
-    vendor: str | None,
-    symbol: str | None,
-    timeframe: str | None,
-    start: str | None,
-    end: str | None,
-) -> psql.Composed:
+    vendor: Optional[str] = None,
+    symbol: Optional[str] = None,
+    timeframe: Optional[str] = None,
+    start: Optional[datetime | str] = None,
+    end: Optional[datetime | str] = None,
+    cols: Optional[Iterable[str]] = None,
+    extra_where: Optional[Mapping[str, object]] = None,
+) -> psql.SQL:
     """
-    Build: SELECT to_jsonb(t) FROM (SELECT <cols> FROM table WHERE ... ORDER BY <time>) t
-    All filters are optional; symbol uppercased if provided.
+    Build a safe SELECT that emits one JSON doc per row via to_jsonb().
+    Intended to be wrapped by COPY (...) TO STDOUT in dump-ndjson paths.
+
+    Returns a psycopg.sql.Composed object (safe, quoted).
     """
+    if table not in TABLE_PRESETS:
+        raise ValueError(f"unknown table: {table}")
+
     preset = TABLE_PRESETS[table]
-    time_col = preset["time_col"]
+    use_cols = tuple(cols or preset.cols)
 
-    base_cols = psql.SQL(", ").join(psql.Identifier(c) for c in cols)
-    q = psql.SQL("SELECT {} FROM {}").format(base_cols, psql.Identifier(table))
+    # SELECT list
+    sel_cols = psql.SQL(", ").join(_ident(c) for c in use_cols)
 
-    wheres: list[psql.Composed] = []
-    if vendor:
-        wheres.append(psql.SQL("vendor = {}").format(psql.Literal(vendor)))
-    if symbol and "symbol" in cols:
-        wheres.append(psql.SQL("symbol = {}").format(psql.Literal(symbol.upper())))
-    if timeframe and "timeframe" in cols:
-        wheres.append(psql.SQL("timeframe = {}").format(psql.Literal(timeframe)))
-    if start:
-        wheres.append(psql.SQL("{} >= {}").format(psql.Identifier(time_col), psql.Literal(start)))
-    if end:
-        wheres.append(psql.SQL("{} < {}").format(psql.Identifier(time_col), psql.Literal(end)))
+    # WHERE clauses
+    wheres: list[psql.SQL] = [psql.SQL("1=1")]
 
-    if wheres:
-        q = psql.SQL("{} WHERE {}").format(q, psql.SQL(" AND ").join(wheres))
+    # Optional standard filters
+    if vendor and "vendor" in preset.filter_cols:
+        wheres.append(psql.SQL("{col} = {val}").format(col=_ident("vendor"), val=_lit(vendor)))
+    if symbol and "symbol" in preset.filter_cols:
+        wheres.append(psql.SQL("{col} = {val}").format(col=_ident("symbol"), val=_lit(symbol)))
+    if timeframe and "timeframe" in preset.filter_cols:
+        wheres.append(
+            psql.SQL("{col} = {val}").format(col=_ident("timeframe"), val=_lit(timeframe))
+        )
 
-    q = psql.SQL("{} ORDER BY {}").format(q, psql.Identifier(time_col))
-    wrapped = psql.SQL("SELECT to_jsonb(t) FROM ({}) t").format(q)
-    return wrapped
+    # Time window
+    ts = _ident(preset.time_col)
+    if start is not None:
+        wheres.append(psql.SQL("{ts} >= {v}").format(ts=ts, v=_lit(start)))
+    if end is not None:
+        wheres.append(psql.SQL("{ts} < {v}").format(ts=ts, v=_lit(end)))
 
+    # Extra equality filters by name (if provided)
+    if extra_where:
+        for k, v in extra_where.items():
+            wheres.append(psql.SQL("{col} = {val}").format(col=_ident(str(k)), val=_lit(v)))
 
-def copy_to_stdout_ndjson(select_json_sql: psql.Composed) -> psql.Composed:
-    # Expect a SELECT producing a single json/jsonb column per row.
-    return psql.SQL("COPY ({}) TO STDOUT").format(select_json_sql)
+    where_sql = psql.SQL(" AND ").join(wheres)
 
-
-def copy_to_stdout_csv(select_sql: psql.Composed) -> psql.Composed:
-    return psql.SQL("COPY ({}) TO STDOUT WITH CSV HEADER").format(select_sql)
+    # SELECT-to-JSON wrapper
+    inner = psql.SQL("SELECT {cols} FROM {tbl} WHERE {where} ORDER BY {ts}").format(
+        cols=sel_cols, tbl=_ident(table), where=where_sql, ts=ts
+    )
+    outer = psql.SQL("SELECT to_jsonb(t) FROM ({inner}) t").format(inner=inner)
+    return outer

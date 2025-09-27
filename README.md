@@ -436,7 +436,17 @@ mds dump bars ./bars_export.csv.gz \
   --start "2024-01-01T00:00:00Z" --end "2024-02-01T00:00:00Z"
 
 # Restore/Import operations (idempotent upserts)
+# Sync CSV restore
 mds restore bars ./bars_export.csv.gz \
+  --dsn "postgresql://..." --tenant-id "uuid"
+
+# Async CSV restore (for large files)
+mds restore-async bars ./bars_export.csv.gz \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --delimiter "," --header
+
+# Async CSV restore from STDIN (shell pipelines)
+zcat bars_export.csv.gz | mds restore-async-stdin bars \
   --dsn "postgresql://..." --tenant-id "uuid"
 
 # NDJSON dump operations (round-trip with ingest-ndjson)
@@ -543,8 +553,17 @@ mds dump bars ./bars_export.csv.gz \
   --vendor "ibkr" --symbol "AAPL" --timeframe "1m" \
   --start "2024-01-01T00:00:00Z" --end "2024-02-01T00:00:00Z"
 
-# Import with upsert
+# Import with upsert (sync)
 mds restore bars ./bars_export.csv.gz \
+  --dsn "postgresql://..." --tenant-id "uuid"
+
+# Import with upsert (async - for large files)
+mds restore-async bars ./bars_export.csv.gz \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --delimiter "," --header
+
+# Import from STDIN (shell pipelines)
+zcat bars_export.csv.gz | mds restore-async-stdin bars \
   --dsn "postgresql://..." --tenant-id "uuid"
 ```
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -482,6 +484,72 @@ def restore_csv_async_alias(
         null=null,
         temp_table_name=temp_table_name,
     )
+
+
+# --- async restore CSV from STDIN -------------------------------------------
+
+
+@app.command("restore-async-stdin")
+def restore_async_stdin(
+    table: str = typer.Argument(..., help="Target table: bars|fundamentals|news|options_snap"),
+    dsn: str = typer.Option(None, "--dsn", envvar="MDS_DSN", help="PostgreSQL DSN"),
+    tenant_id: Optional[str] = typer.Option(
+        None, "--tenant-id", envvar="MDS_TENANT_ID", help="Tenant UUID for RLS"
+    ),
+    app_name: str = typer.Option("mds_client_async", "--app-name", help="application_name for pg"),
+    pool_max: int = typer.Option(10, "--pool-max", min=1, help="Async pool max connections"),
+    delimiter: str = typer.Option(",", "--delimiter", help="CSV delimiter"),
+    header: bool = typer.Option(True, "--header/--no-header", help="CSV has header row"),
+    null: str = typer.Option("\\N", "--null", help="NULL representation"),
+    temp_table_name: Optional[str] = typer.Option(
+        None, "--temp-table", help="Override temp staging table name"
+    ),
+):
+    """
+    Async CSV restore from STDIN with idempotent upserts (COPY to staging → INSERT ... ON CONFLICT).
+    Example:
+      zcat bars.csv.gz | mds restore-async-stdin bars --dsn ... --tenant-id ...
+    """
+    if not dsn:
+        typer.secho("Missing DSN. Provide --dsn or set MDS_DSN.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2)
+
+    # stream stdin to a temp file on disk (works cross-platform)
+    tmp_path: Optional[Path] = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".csv", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+            buf = sys.stdin.buffer
+            chunk = buf.read(1 << 20)  # 1 MiB chunks
+            while chunk:
+                tmp.write(chunk)
+                chunk = buf.read(1 << 20)
+
+        # reuse the existing async CSV restore impl (treat temp file as plain CSV)
+        n = asyncio.run(
+            _restore_csv_async_impl(
+                table=table,
+                src_path=tmp_path,
+                dsn=dsn,
+                tenant_id=tenant_id,
+                app_name=app_name,
+                pool_max=pool_max,
+                delimiter=delimiter,
+                header=header,
+                null=null,
+                temp_table_name=temp_table_name,
+            )
+        )
+        typer.secho(
+            f"✅ restore-async (stdin) complete: {n} rows upserted into {table}",
+            fg=typer.colors.GREEN,
+        )
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 # --- NDJSON export commands (dump-ndjson*) -----------------------------------

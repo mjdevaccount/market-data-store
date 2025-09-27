@@ -102,8 +102,15 @@ pip install -r requirements-dev.txt
 
 ### Database Setup
 
+**Option 1: Using Docker initdb (Recommended for fresh setup)**
 ```powershell
-# Run migrations
+# The schema will be automatically applied when the database container starts
+# if using docker-compose with the initdb.d scripts
+```
+
+**Option 2: Manual setup**
+```powershell
+# Run migrations (for existing databases)
 python -m datastore.cli migrate
 
 # Apply seed data
@@ -111,6 +118,12 @@ python -m datastore.cli seed
 
 # Apply TimescaleDB policies (optional)
 python -m datastore.cli policies
+```
+
+**Option 3: Fresh schema setup**
+```powershell
+# For a completely fresh database, you can use the production schema directly
+# See DATABASE_SETUP.md for detailed instructions
 ```
 
 ### Dependencies

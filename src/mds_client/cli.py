@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 import asyncio
 import gzip
+import json
 import sys
-import typer
-from datetime import datetime, date
+from datetime import datetime
 from typing import Optional
+
+import typer
 
 from .client import MDS
 from .aclient import AMDS
@@ -11,36 +15,51 @@ from .batch import BatchProcessor, BatchConfig
 from .abatch import AsyncBatchProcessor
 from .models import Bar, Fundamentals, News, OptionSnap
 
-app = typer.Typer(help="Market Data Store operational CLI")
+app = typer.Typer(help="Market Data Store (mds_client) operational CLI")
 
-# ---------- helpers
+
+# ---------- helpers ----------
 
 
 def _mk_mds(dsn: str, tenant_id: Optional[str]) -> MDS:
-    return MDS({"dsn": dsn, "tenant_id": tenant_id})
+    cfg: dict = {"dsn": dsn}
+    if tenant_id:
+        cfg["tenant_id"] = tenant_id
+    return MDS(cfg)
 
 
-def _mk_amds(dsn: str, tenant_id: Optional[str]) -> AMDS:
-    return AMDS({"dsn": dsn, "tenant_id": tenant_id, "pool_max": 10})
+def _mk_amds(dsn: str, tenant_id: Optional[str], pool_max: int) -> AMDS:
+    cfg: dict = {"dsn": dsn, "pool_max": pool_max}
+    if tenant_id:
+        cfg["tenant_id"] = tenant_id
+    return AMDS(cfg)
 
 
-# ---------- health/schema
+def _parse_csv(s: str) -> list[str]:
+    return [x.strip() for x in s.split(",") if x.strip()]
+
+
+def _echo(obj) -> None:
+    typer.echo(json.dumps(obj, default=str))
+
+
+# ---------- connectivity ----------
 
 
 @app.command("ping")
-def ping(dsn: str, tenant_id: Optional[str] = None):
+def ping(dsn: str, tenant_id: Optional[str] = typer.Option(None)):
     mds = _mk_mds(dsn, tenant_id)
     ok = mds.health()
-    typer.echo("ok" if ok else "not-ok")
+    _echo({"ok": ok})
 
 
 @app.command("schema-version")
 def schema_version(dsn: str):
     mds = _mk_mds(dsn, None)
-    typer.echo(mds.schema_version())
+    _echo({"schema_version": mds.schema_version()})
 
 
-# ---------- writes (single-row convenience)
+# ---------- writes (sync) ----------
 
 
 @app.command("write-bar")
@@ -70,8 +89,8 @@ def write_bar(
         close_price=close_price,
         volume=volume,
     )
-    n = mds.upsert_bars([row])
-    typer.echo(n)
+    mds.upsert_bars([row])
+    _echo({"upserted": 1})
 
 
 @app.command("write-fundamental")
@@ -97,8 +116,8 @@ def write_fundamental(
         net_income=net_income,
         eps=eps,
     )
-    n = mds.upsert_fundamentals([row])
-    typer.echo(n)
+    mds.upsert_fundamentals([row])
+    _echo({"upserted": 1})
 
 
 @app.command("write-news")
@@ -122,8 +141,8 @@ def write_news(
         url=url,
         sentiment_score=sentiment_score,
     )
-    n = mds.upsert_news([row])
-    typer.echo(n)
+    mds.upsert_news([row])
+    _echo({"upserted": 1})
 
 
 @app.command("write-option")
@@ -132,7 +151,7 @@ def write_option(
     tenant_id: str,
     vendor: str,
     symbol: str,
-    expiry: str,
+    expiry: datetime,  # you can change to date in typer if you prefer
     option_type: str,
     strike: float,
     ts: datetime,
@@ -144,12 +163,11 @@ def write_option(
     spot: Optional[float] = None,
 ):
     mds = _mk_mds(dsn, tenant_id)
-    expiry_date = date.fromisoformat(expiry)
     row = OptionSnap(
         tenant_id=tenant_id,
         vendor=vendor,
         symbol=symbol,
-        expiry=expiry_date,
+        expiry=expiry.date(),
         option_type=option_type,
         strike=strike,
         ts=ts,
@@ -160,43 +178,52 @@ def write_option(
         volume=volume,
         spot=spot,
     )
-    n = mds.upsert_options([row])
-    typer.echo(n)
+    mds.upsert_options([row])
+    _echo({"upserted": 1})
 
 
-# ---------- NDJSON ingest (sync and async)
+# ---------- reads (sync) ----------
+
+
+@app.command("latest-prices")
+def latest_prices(
+    dsn: str,
+    vendor: str,
+    symbols: str = typer.Argument(..., help="CSV list: e.g. AAPL,MSFT,SPY"),
+    tenant_id: Optional[str] = typer.Option(None),
+):
+    mds = _mk_mds(dsn, tenant_id)
+    rows = mds.latest_prices(_parse_csv(symbols), vendor=vendor)
+    _echo([r.model_dump() for r in rows])
+
+
+# ---------- ingest NDJSON (sync) ----------
 
 
 @app.command("ingest-ndjson")
 def ingest_ndjson(
-    dsn: str,
-    tenant_id: str,
     kind: str = typer.Argument(..., help="one of: bars|fundamentals|news|options"),
-    path: str = typer.Argument(..., help="NDJSON file path (or '-' for stdin; .gz supported)"),
+    path: str = typer.Argument(..., help="NDJSON file path or '-' for stdin (.gz supported)"),
+    dsn: str = typer.Option(..., help="PostgreSQL DSN"),
+    tenant_id: str = typer.Option(..., help="Tenant UUID"),
     max_rows: int = 1000,
     max_ms: int = 5000,
     max_bytes: int = 1_048_576,
 ):
-    """
-    Synchronous NDJSON ingest using MDS + BatchProcessor.
-
-    Reads line-delimited JSON objects and batches by size/time/bytes.
-    """
     mds = _mk_mds(dsn, tenant_id)
     cfg = BatchConfig(max_rows=max_rows, max_ms=max_ms, max_bytes=max_bytes)
     bp = BatchProcessor(mds, cfg)
 
-    factory_map = {
+    model_map = {
         "bars": Bar,
         "fundamentals": Fundamentals,
         "news": News,
         "options": OptionSnap,
     }
-    factory = factory_map.get(kind.lower())
+    factory = model_map.get(kind.lower())
     if not factory:
         raise typer.BadParameter("kind must be one of: bars|fundamentals|news|options")
 
-    # open file/stream
     if path == "-":
         fh = sys.stdin
         close_needed = False
@@ -210,11 +237,10 @@ def ingest_ndjson(
     count = 0
     try:
         for line in fh:
-            line = line.strip()
-            if not line:
+            s = line.strip()
+            if not s:
                 continue
-            obj = factory.model_validate_json(line)
-
+            obj = factory.model_validate_json(s)
             if kind == "bars":
                 bp.add_bar(obj)  # type: ignore[arg-type]
             elif kind == "fundamentals":
@@ -223,60 +249,91 @@ def ingest_ndjson(
                 bp.add_news(obj)  # type: ignore[arg-type]
             else:
                 bp.add_option(obj)  # type: ignore[arg-type]
-
             count += 1
-
-        # final flush
         bp.flush()
     finally:
         if close_needed:
             fh.close()
 
-    typer.echo(count)
+    _echo({"ingested": count})
+
+
+# ---------- ingest NDJSON (async) ----------
+
+
+async def _ingest_ndjson_async_impl(
+    kind: str,
+    path: str,
+    amds: AMDS,
+    cfg: BatchConfig,
+) -> int:
+    model_map = {
+        "bars": Bar,
+        "fundamentals": Fundamentals,
+        "news": News,
+        "options": OptionSnap,
+    }
+    factory = model_map.get(kind.lower())
+    if not factory:
+        raise typer.BadParameter("kind must be one of: bars|fundamentals|news|options")
+
+    if path == "-":
+        fh = sys.stdin
+        close_needed = False
+    elif path.endswith(".gz"):
+        fh = gzip.open(path, "rt", encoding="utf-8")
+        close_needed = True
+    else:
+        fh = open(path, "r", encoding="utf-8")
+        close_needed = True
+
+    count = 0
+    try:
+        async with AsyncBatchProcessor(amds, cfg) as bp:
+            for line in fh:
+                s = line.strip()
+                if not s:
+                    continue
+                obj = factory.model_validate_json(s)
+                if kind == "bars":
+                    await bp.add_bar(obj)  # type: ignore[arg-type]
+                elif kind == "fundamentals":
+                    await bp.add_fundamental(obj)  # type: ignore[arg-type]
+                elif kind == "news":
+                    await bp.add_news(obj)  # type: ignore[arg-type]
+                else:
+                    await bp.add_option(obj)  # type: ignore[arg-type]
+                count += 1
+    finally:
+        if close_needed:
+            fh.close()
+
+    return count
 
 
 @app.command("ingest-ndjson-async")
 def ingest_ndjson_async(
-    dsn: str,
-    tenant_id: str,
     kind: str = typer.Argument(..., help="one of: bars|fundamentals|news|options"),
-    path: str = typer.Argument(..., help="NDJSON file path"),
+    path: str = typer.Argument(..., help="NDJSON file path or '-' for stdin (.gz supported)"),
+    dsn: str = typer.Option(..., help="PostgreSQL DSN"),
+    tenant_id: str = typer.Option(..., help="Tenant UUID"),
+    pool_max: int = 10,
     max_rows: int = 1000,
     max_ms: int = 5000,
     max_bytes: int = 1_048_576,
 ):
-    async def _run():
-        amds = _mk_amds(dsn, tenant_id)
-        factory_map = {
-            "bars": Bar,
-            "fundamentals": Fundamentals,
-            "news": News,
-            "options": OptionSnap,
-        }
-        factory = factory_map.get(kind.lower())
-        if not factory:
-            raise typer.BadParameter("kind must be one of: bars|fundamentals|news|options")
+    amds = _mk_amds(dsn, tenant_id, pool_max=pool_max)
+    cfg = BatchConfig(max_rows=max_rows, max_ms=max_ms, max_bytes=max_bytes)
+    total = asyncio.run(_ingest_ndjson_async_impl(kind, path, amds, cfg))
+    _echo({"ingested": total})
 
-        count = 0
-        cfg = BatchConfig(max_rows=max_rows, max_ms=max_ms, max_bytes=max_bytes)
-        async with AsyncBatchProcessor(amds, cfg) as bp:
-            with open(path, "r", encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    obj = factory.model_validate_json(line)
 
-                    if kind == "bars":
-                        await bp.add_bar(obj)  # type: ignore[arg-type]
-                    elif kind == "fundamentals":
-                        await bp.add_fundamental(obj)  # type: ignore[arg-type]
-                    elif kind == "news":
-                        await bp.add_news(obj)  # type: ignore[arg-type]
-                    else:
-                        await bp.add_option(obj)  # type: ignore[arg-type]
-                    count += 1
+# ---------- entry ----------
 
-        typer.echo(count)
 
-    asyncio.run(_run())
+def main():
+    app()
+
+
+if __name__ == "__main__":
+    main()

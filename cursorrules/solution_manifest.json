@@ -63,8 +63,8 @@
     },
     {
       "path": "src/mds_client/cli.py",
-      "sha": "abfa62b45f4d537b",
-      "summary": "import asyncio"
+      "sha": "247a55656f9a97a2",
+      "summary": "from __future__ import annotations"
     },
     {
       "path": "src/mds_client/client.py",
@@ -98,8 +98,8 @@
     },
     {
       "path": "src/mds_client/__init__.py",
-      "sha": "a18abe8665061545",
-      "summary": "\"\"\""
+      "sha": "ebf45237314d677d",
+      "summary": "from .client import MDS"
     },
     {
       "path": "migrations/env.py",

@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mds = "mds_client.cli:app"
+mds = "mds_client.cli:main"
 
 [project.optional-dependencies]
 dev = [

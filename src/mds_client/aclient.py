@@ -4,8 +4,9 @@ import io
 import csv
 import uuid
 import os
+import gzip
 from dataclasses import dataclass
-from typing import Iterable, Optional, Sequence, List
+from typing import Iterable, Optional, Sequence, List, BinaryIO
 
 import psycopg
 from psycopg import sql as psql
@@ -433,6 +434,122 @@ class AMDS:
                     },
                 )
             await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
+        finally:
+            await self._put_conn_ok(conn)
+
+    # ---------- backup/export/import helpers ----------
+
+    async def copy_out_csv(
+        self,
+        *,
+        select_sql: psql.Composed,
+        out: BinaryIO | None = None,
+        out_path: str | None = None,
+        gzip_level: int = 6,
+    ) -> int:
+        if (out is None) == (out_path is None):
+            raise ValueError("Provide exactly one of `out` or `out_path`")
+        total = 0
+        conn = await self._get_conn()
+        try:
+            async with conn.cursor() as cur:
+                copy_sql = psql.SQL("COPY ({}) TO STDOUT WITH (FORMAT csv, HEADER true)").format(
+                    select_sql
+                )
+                f = out
+                if out_path is not None:
+                    f = (
+                        gzip.open(out_path, "wb", gzip_level)
+                        if out_path.endswith(".gz")
+                        else open(out_path, "wb")
+                    )
+                try:
+                    async with cur.copy(copy_sql) as cp:
+                        while True:
+                            chunk = await cp.read()
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            total += len(chunk)
+                finally:
+                    if out_path is not None and f is not None:
+                        f.close()
+            await conn.commit()
+            return total
+        except Exception:
+            await conn.rollback()
+            raise
+        finally:
+            await self._put_conn_ok(conn)
+
+    async def copy_restore_csv(
+        self,
+        *,
+        target: str,
+        cols: list[str],
+        conflict_cols: list[str],
+        update_cols: list[str],
+        src: BinaryIO | None = None,
+        src_path: str | None = None,
+    ) -> int:
+        if (src is None) == (src_path is None):
+            raise ValueError("Provide exactly one of `src` or `src_path`")
+        conn = await self._get_conn()
+        try:
+            async with conn.cursor() as cur:
+                tmp = f"tmp_{target}_restore"
+                await cur.execute(
+                    psql.SQL("CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS)").format(
+                        psql.Identifier(tmp), psql.Identifier(target)
+                    )
+                )
+                copy_in_sql = psql.SQL(
+                    "COPY {} ({}) FROM STDIN WITH (FORMAT csv, HEADER true)"
+                ).format(
+                    psql.Identifier(tmp),
+                    psql.SQL(", ").join(psql.Identifier(c) for c in cols),
+                )
+                f = src
+                if src_path is not None:
+                    f = (
+                        gzip.open(src_path, "rb")
+                        if src_path.endswith(".gz")
+                        else open(src_path, "rb")
+                    )
+                try:
+                    async with cur.copy(copy_in_sql) as cp:
+                        while True:
+                            chunk = f.read(1 << 20)
+                            if not chunk:
+                                break
+                            await cp.write(chunk)
+                finally:
+                    if src_path is not None and f is not None:
+                        f.close()
+
+                insert_sql = psql.SQL(
+                    """
+                    INSERT INTO {} ({cols})
+                    SELECT {cols} FROM {}
+                    ON CONFLICT ({conflict}) DO UPDATE
+                    SET {updates}, updated_at = NOW()
+                """
+                ).format(
+                    psql.Identifier(target),
+                    psql.Identifier(tmp),
+                    cols=psql.SQL(", ").join(psql.Identifier(c) for c in cols),
+                    conflict=psql.SQL(", ").join(psql.Identifier(c) for c in conflict_cols),
+                    updates=psql.SQL(", ").join(
+                        psql.SQL("{} = EXCLUDED.{}").format(psql.Identifier(c), psql.Identifier(c))
+                        for c in update_cols
+                    ),
+                )
+                await cur.execute(insert_sql)
+            await conn.commit()
+            return cur.rowcount  # type: ignore[attr-defined]
         except Exception:
             await conn.rollback()
             raise

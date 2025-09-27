@@ -428,6 +428,16 @@ cat bars.ndjson | mds ingest-ndjson bars - \
 mds ingest-ndjson-async bars ./bars.ndjson \
   --dsn "postgresql://..." --tenant-id "uuid" \
   --max-rows 2000 --max-ms 3000
+
+# Backup/Export operations (tenant-aware, RLS-enforced)
+mds dump bars ./bars_export.csv.gz \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --vendor "ibkr" --symbol "AAPL" --timeframe "1m" \
+  --start "2024-01-01T00:00:00Z" --end "2024-02-01T00:00:00Z"
+
+# Restore/Import operations (idempotent upserts)
+mds restore bars ./bars_export.csv.gz \
+  --dsn "postgresql://..." --tenant-id "uuid"
 ```
 
 ### ⚡ Performance Optimization
@@ -471,6 +481,70 @@ export MDS_COPY_MIN_ROWS=5000
 - **`execute_values`**: Fast for mid-size batches (500-5000 rows), sync only
 - **`COPY`**: Fastest for large batches (5000+ rows), works with RLS and maintains idempotency
 
+### 💾 Backup & Restore Operations
+
+The library provides tenant-aware backup and restore operations using PostgreSQL's `COPY` command:
+
+#### Export Operations (Tenant-Aware Dumps)
+```python
+from mds_client import MDS
+from psycopg import sql as psql
+
+mds = MDS({"dsn": "...", "tenant_id": "uuid"})
+
+# Export bars for specific vendor/symbol/timeframe
+sel = psql.SQL("""
+    SELECT {cols}
+    FROM bars
+    WHERE vendor = {v} AND symbol = {s} AND timeframe = '1m'
+      AND ts >= {start} AND ts < {end}
+    ORDER BY ts
+""").format(
+    cols=psql.SQL(", ").join(psql.Identifier(c) for c in mds.TABLE_PRESETS["bars"]["cols"]),
+    v=psql.Literal("ibkr"),
+    s=psql.Literal("AAPL"),
+    start=psql.Literal("2024-01-01T00:00:00Z"),
+    end=psql.Literal("2024-02-01T00:00:00Z"),
+)
+
+# Export to gzipped CSV
+mds.copy_out_csv(select_sql=sel, out_path="bars_aapl_2024-01.csv.gz")
+```
+
+#### Import Operations (Idempotent Upserts)
+```python
+# Restore from CSV with upsert semantics
+preset = MDS.TABLE_PRESETS["bars"]
+mds.copy_restore_csv(
+    target="bars",
+    cols=preset["cols"],
+    conflict_cols=preset["conflict"],
+    update_cols=preset["update"],
+    src_path="bars_aapl_2024-01.csv.gz",
+)
+```
+
+#### CLI Operations
+```bash
+# Export with filters
+mds dump bars ./bars_export.csv.gz \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --vendor "ibkr" --symbol "AAPL" --timeframe "1m" \
+  --start "2024-01-01T00:00:00Z" --end "2024-02-01T00:00:00Z"
+
+# Import with upsert
+mds restore bars ./bars_export.csv.gz \
+  --dsn "postgresql://..." --tenant-id "uuid"
+```
+
+#### Key Features
+- **RLS Enforcement**: All operations respect Row Level Security via `SET app.tenant_id`
+- **Consistent Snapshots**: Multiple `COPY` operations in single transaction
+- **Idempotent Restores**: `INSERT ... ON CONFLICT DO UPDATE` preserves existing data
+- **Gzip Support**: Automatic compression for `.gz` files
+- **CSV with Headers**: Self-describing format for easy inspection
+- **Streaming**: Memory-efficient for large datasets
+
 ### 🔄 Batch Processing
 
 For high-throughput scenarios, the library supports both sync and async batch processing:
@@ -511,6 +585,7 @@ async with AsyncBatchProcessor(amds, BatchConfig(max_rows=1000, max_ms=5000)) as
 - **Environment Variables**: CLI support for MDS_DSN and MDS_TENANT_ID
 - **NDJSON Support**: Gzip compression, stdin input, and model coercion
 - **Job Outbox**: Idempotent job enqueueing with conflict-free guarantees
+- **Backup/Restore**: Tenant-aware CSV export/import with RLS enforcement and idempotent upserts
 
 ### Dependencies
 

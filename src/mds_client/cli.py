@@ -10,6 +10,8 @@ import typer
 from . import MDS, AMDS, BatchProcessor, AsyncBatchProcessor, BatchConfig
 from .models import Bar, Fundamentals, News, OptionSnap
 from .utils import iter_ndjson, coerce_model
+from .client import TABLE_PRESETS
+from psycopg import sql as psql
 
 app = typer.Typer(help="mds_client operational CLI")
 
@@ -307,6 +309,85 @@ def enqueue_job(
         priority=priority,
     )
     typer.echo("ok")
+
+
+# ---------------------------
+# Backup/Export/Import commands
+# ---------------------------
+
+
+@app.command("dump")
+def dump(
+    table: str = typer.Argument(..., help="bars|fundamentals|news|options_snap"),
+    out_path: str = typer.Argument(..., help="Output file (.csv or .csv.gz) or '-' for stdout"),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
+    vendor: str = typer.Option(None, "--vendor", help="Filter by vendor"),
+    symbol: str = typer.Option(None, "--symbol", help="Filter by symbol"),
+    timeframe: str = typer.Option(None, "--timeframe", help="Filter by timeframe"),
+    start: str = typer.Option(None, "--start", help="Start time (ISO format)"),
+    end: str = typer.Option(None, "--end", help="End time (ISO format)"),
+):
+    """Export table data to CSV with optional filters."""
+    if table not in TABLE_PRESETS:
+        raise typer.BadParameter(f"table must be one of: {', '.join(TABLE_PRESETS.keys())}")
+
+    mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
+    cols = TABLE_PRESETS[table]["cols"]
+    parts = [
+        psql.SQL("SELECT {} FROM {}").format(
+            psql.SQL(", ").join(psql.Identifier(c) for c in cols),
+            psql.Identifier(table),
+        )
+    ]
+    wh = []
+    if vendor:
+        wh.append(psql.SQL("vendor = {}").format(psql.Literal(vendor)))
+    if symbol:
+        wh.append(psql.SQL("symbol = {}").format(psql.Literal(symbol.upper())))
+    if timeframe and "timeframe" in cols:
+        wh.append(psql.SQL("timeframe = {}").format(psql.Literal(timeframe)))
+    # time col name varies per table
+    tcol = "ts" if "ts" in cols else ("asof" if "asof" in cols else "published_at")
+    if start:
+        wh.append(psql.SQL("{} >= {}").format(psql.Identifier(tcol), psql.Literal(start)))
+    if end:
+        wh.append(psql.SQL("{} < {}").format(psql.Identifier(tcol), psql.Literal(end)))
+    if wh:
+        parts.append(psql.SQL("WHERE ") + psql.SQL(" AND ").join(wh))
+    parts.append(psql.SQL("ORDER BY {}").format(psql.Identifier(tcol)))
+    sel = psql.SQL(" ").join(parts)
+
+    if out_path == "-":
+        import sys
+
+        mds.copy_out_csv(select_sql=sel, out=sys.stdout.buffer)
+    else:
+        mds.copy_out_csv(select_sql=sel, out_path=out_path)
+    typer.echo("ok")
+
+
+@app.command("restore")
+def restore(
+    table: str = typer.Argument(..., help="bars|fundamentals|news|options_snap"),
+    src_path: str = typer.Argument(..., help="Input .csv or .csv.gz (must have HEADER)"),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
+):
+    """Import table data from CSV with upsert semantics."""
+    if table not in TABLE_PRESETS:
+        raise typer.BadParameter(f"table must be one of: {', '.join(TABLE_PRESETS.keys())}")
+
+    mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
+    p = TABLE_PRESETS[table]
+    n = mds.copy_restore_csv(
+        target=table,
+        cols=p["cols"],
+        conflict_cols=p["conflict"],
+        update_cols=p["update"],
+        src_path=src_path,
+    )
+    typer.echo(f"upserted {n} rows")
 
 
 if __name__ == "__main__":

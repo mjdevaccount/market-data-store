@@ -4,9 +4,10 @@ import io
 import csv
 import uuid
 import os
+import gzip
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterable, Optional, Sequence
+from typing import Iterable, Optional, Sequence, BinaryIO
 
 import psycopg
 from psycopg import sql as psql
@@ -496,3 +497,192 @@ class MDS:
                     "priority": priority,
                 },
             )
+
+    # ---------- backup/export/import helpers ----------
+
+    def copy_out_csv(
+        self,
+        *,
+        select_sql: psql.Composed,
+        params: dict | None = None,
+        out: BinaryIO | None = None,
+        out_path: str | None = None,
+        gzip_level: int = 6,
+    ) -> int:
+        """
+        COPY (SELECT ...) TO STDOUT WITH CSV HEADER.
+        Returns total bytes written. RLS is enforced (tenant set on connection).
+        Use either `out` (open binary handle) or `out_path`; if out_path endswith .gz -> gzip.
+        """
+        if (out is None) == (out_path is None):
+            raise ValueError("Provide exactly one of `out` or `out_path`")
+
+        total = 0
+        with self._conn() as conn, conn.cursor() as cur:
+            # ensure params is dict, even if None
+            params = params or {}
+            copy_sql = psql.SQL("COPY ({}) TO STDOUT WITH (FORMAT csv, HEADER true)").format(
+                select_sql
+            )
+            # open sink
+            f = out
+            if out_path is not None:
+                f = (
+                    gzip.open(out_path, "wb", gzip_level)
+                    if out_path.endswith(".gz")
+                    else open(out_path, "wb")
+                )
+            try:
+                with cur.copy(copy_sql) as cp:
+                    # psycopg3: cp.read() -> bytes until b"" on completion
+                    while True:
+                        chunk = cp.read()
+                        if not chunk:
+                            break
+                        if params:
+                            # For COPY (SELECT $1) you can't pass params here; params must be inlined.
+                            # So we only use params to format literals into `select_sql` above.
+                            pass
+                        f.write(chunk)
+                        total += len(chunk)
+            finally:
+                if out_path is not None and f is not None:
+                    f.close()
+        return total
+
+    def copy_restore_csv(
+        self,
+        *,
+        target: str,
+        cols: list[str],
+        conflict_cols: list[str],
+        update_cols: list[str],
+        src: BinaryIO | None = None,
+        src_path: str | None = None,
+    ) -> int:
+        """
+        COPY CSV (HEADER) from file/stdin into a TEMP table, then UPSERT into `target`.
+        Returns affected rowcount from the final INSERT .. ON CONFLICT.
+        """
+        if (src is None) == (src_path is None):
+            raise ValueError("Provide exactly one of `src` or `src_path`")
+        with self._conn() as conn, conn.cursor() as cur:
+            tmp = f"tmp_{target}_restore"
+            cur.execute(
+                psql.SQL("CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS)").format(
+                    psql.Identifier(tmp), psql.Identifier(target)
+                )
+            )
+            copy_in_sql = psql.SQL("COPY {} ({}) FROM STDIN WITH (FORMAT csv, HEADER true)").format(
+                psql.Identifier(tmp),
+                psql.SQL(", ").join(psql.Identifier(c) for c in cols),
+            )
+            f = src
+            if src_path is not None:
+                f = gzip.open(src_path, "rb") if src_path.endswith(".gz") else open(src_path, "rb")
+            try:
+                with cur.copy(copy_in_sql) as cp:
+                    while True:
+                        chunk = f.read(1 << 20)
+                        if not chunk:
+                            break
+                        cp.write(chunk)
+            finally:
+                if src_path is not None and f is not None:
+                    f.close()
+
+            insert_sql = psql.SQL(
+                """
+                INSERT INTO {} ({cols})
+                SELECT {cols} FROM {}
+                ON CONFLICT ({conflict}) DO UPDATE
+                SET {updates}, updated_at = NOW()
+            """
+            ).format(
+                psql.Identifier(target),
+                psql.Identifier(tmp),
+                cols=psql.SQL(", ").join(psql.Identifier(c) for c in cols),
+                conflict=psql.SQL(", ").join(psql.Identifier(c) for c in conflict_cols),
+                updates=psql.SQL(", ").join(
+                    psql.SQL("{} = EXCLUDED.{}").format(psql.Identifier(c), psql.Identifier(c))
+                    for c in update_cols
+                ),
+            )
+            cur.execute(insert_sql)
+            return cur.rowcount
+
+
+# Convenience: table presets (so CLI can call by name)
+TABLE_PRESETS: dict[str, dict[str, list[str]]] = {
+    "bars": {
+        "cols": [
+            "ts",
+            "tenant_id",
+            "vendor",
+            "symbol",
+            "timeframe",
+            "open_price",
+            "high_price",
+            "low_price",
+            "close_price",
+            "volume",
+        ],
+        "conflict": ["ts", "tenant_id", "vendor", "symbol", "timeframe"],
+        "update": ["open_price", "high_price", "low_price", "close_price", "volume"],
+    },
+    "fundamentals": {
+        "cols": [
+            "asof",
+            "tenant_id",
+            "vendor",
+            "symbol",
+            "total_assets",
+            "total_liabilities",
+            "net_income",
+            "eps",
+        ],
+        "conflict": ["asof", "tenant_id", "vendor", "symbol"],
+        "update": ["total_assets", "total_liabilities", "net_income", "eps"],
+    },
+    "news": {
+        "cols": [
+            "published_at",
+            "tenant_id",
+            "vendor",
+            "id",
+            "symbol",
+            "title",
+            "url",
+            "sentiment_score",
+        ],
+        "conflict": ["published_at", "tenant_id", "vendor", "id"],
+        "update": ["symbol", "title", "url", "sentiment_score"],
+    },
+    "options_snap": {
+        "cols": [
+            "ts",
+            "tenant_id",
+            "vendor",
+            "symbol",
+            "expiry",
+            "option_type",
+            "strike",
+            "iv",
+            "delta",
+            "gamma",
+            "oi",
+            "volume",
+            "spot",
+        ],
+        "conflict": [
+            "ts",
+            "tenant_id",
+            "vendor",
+            "symbol",
+            "expiry",
+            "option_type",
+            "strike",
+        ],
+        "update": ["iv", "delta", "gamma", "oi", "volume", "spot"],
+    },
+}

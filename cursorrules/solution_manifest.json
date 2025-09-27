@@ -47,6 +47,11 @@
       "summary": "from fastapi import FastAPI, Response, status, HTTPException, Depends, Request"
     },
     {
+      "path": "src/mds_client/aclient.py",
+      "sha": "dddb796150bd5cd8",
+      "summary": "\"\"\""
+    },
+    {
       "path": "src/mds_client/batch.py",
       "sha": "45295b459a356494",
       "summary": "\"\"\""
@@ -58,12 +63,12 @@
     },
     {
       "path": "src/mds_client/client.py",
-      "sha": "6e76342247bd46a2",
+      "sha": "c4b6157c0d37977f",
       "summary": "\"\"\""
     },
     {
       "path": "src/mds_client/errors.py",
-      "sha": "9447b0558b1a7195",
+      "sha": "87493ba25b090a5e",
       "summary": "\"\"\""
     },
     {
@@ -73,7 +78,7 @@
     },
     {
       "path": "src/mds_client/rls.py",
-      "sha": "72e6cd8b75d36cec",
+      "sha": "41a763a7326ef57b",
       "summary": "\"\"\""
     },
     {
@@ -88,7 +93,7 @@
     },
     {
       "path": "src/mds_client/__init__.py",
-      "sha": "711d418ba0717a1d",
+      "sha": "d1ecab4981d7de6f",
       "summary": "\"\"\""
     },
     {

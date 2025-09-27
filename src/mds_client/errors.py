@@ -4,83 +4,47 @@ Custom exceptions for Market Data Store Client.
 Provides structured error handling with retry logic and observability.
 """
 
-from typing import Optional, Dict, Any
 
-
-class MDSError(Exception):
-    """Base exception for all MDS client errors."""
-
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
-        super().__init__(message)
-        self.message = message
-        self.details = details or {}
-
-
-class ConnectionError(MDSError):
-    """Database connection or network errors."""
+class MDSOperationalError(Exception):
+    """Base operational error for MDS client."""
 
     pass
 
 
-class RetryableError(MDSError):
+class RetryableError(MDSOperationalError):
     """Temporary errors that should be retried with backoff."""
 
-    def __init__(
-        self,
-        message: str,
-        retry_after: Optional[float] = None,
-        details: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message, details)
-        self.retry_after = retry_after
+    pass
 
 
-class ConstraintViolation(MDSError):
+class ConstraintViolation(MDSOperationalError):
     """Database constraint violations (unique, foreign key, etc.)."""
 
-    def __init__(
-        self,
-        message: str,
-        constraint: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message, details)
-        self.constraint = constraint
-
-
-class NotFoundError(MDSError):
-    """Resource not found errors."""
-
     pass
 
 
-class RLSViolation(MDSError):
+class RLSDenied(MDSOperationalError):
     """Row Level Security policy violations."""
 
-    def __init__(
-        self,
-        message: str,
-        tenant_id: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message, details)
-        self.tenant_id = tenant_id
+    pass
 
 
-class TimeoutError(MDSError):
+class TimeoutExceeded(MDSOperationalError):
     """Query or connection timeout errors."""
 
-    def __init__(
-        self,
-        message: str,
-        timeout_ms: Optional[int] = None,
-        details: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(message, details)
-        self.timeout_ms = timeout_ms
-
-
-class ValidationError(MDSError):
-    """Data validation errors before database operations."""
-
     pass
+
+
+def map_db_error(e: Exception) -> MDSOperationalError:
+    import psycopg
+    import psycopg.errors as E
+
+    if isinstance(e, (E.SerializationFailure, E.DeadlockDetected, psycopg.OperationalError)):
+        return RetryableError(str(e))
+    if isinstance(e, (E.UniqueViolation, E.CheckViolation, E.ForeignKeyViolation)):
+        return ConstraintViolation(str(e))
+    if "row level security" in str(e).lower() or "app.tenant_id" in str(e):
+        return RLSDenied(str(e))
+    if isinstance(e, E.QueryCanceled):
+        return TimeoutExceeded(str(e))
+    return MDSOperationalError(str(e))

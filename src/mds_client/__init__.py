@@ -16,15 +16,15 @@ Usage:
     await amds.upsert_bars([Bar(...)])
 """
 
-from .client import MDS, AMDS, MDSConfig
+from .client import MDS, MDSConfig
+from .aclient import AMDS
 from .models import Bar, Fundamentals, News, OptionSnap, LatestPrice
 from .errors import (
-    MDSError,
-    ConnectionError,
+    MDSOperationalError,
     RetryableError,
     ConstraintViolation,
-    NotFoundError,
-    RLSViolation,
+    RLSDenied,
+    TimeoutExceeded,
 )
 
 __version__ = "1.0.0"
@@ -37,10 +37,9 @@ __all__ = [
     "News",
     "OptionSnap",
     "LatestPrice",
-    "MDSError",
-    "ConnectionError",
+    "MDSOperationalError",
     "RetryableError",
     "ConstraintViolation",
-    "NotFoundError",
-    "RLSViolation",
+    "RLSDenied",
+    "TimeoutExceeded",
 ]

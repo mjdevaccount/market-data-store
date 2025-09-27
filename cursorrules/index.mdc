@@ -1,6 +1,7 @@
 # Always-Active Rules (market-data-store)
 SCOPE
 - This repo is a data-store control-plane: FastAPI admin endpoints, Alembic migrations, policies, CLI, metrics.
+- Includes mds_client library: Production-ready client for Market Data Core with sync/async APIs, batch processing, backup/restore.
 - No bulk data plane here. Orchestrator writes via the datastore library; readers go direct DB or separate analytics API.
 
 BOUNDARIES
@@ -10,16 +11,18 @@ BOUNDARIES
 
 CONTEXT INJECTION
 - Inject only assets referenced by the task. Never dump entire files.
-- Inject order: core config → library → service → migrations → tests.
+- Inject order: core config → mds_client library → datastore library → service → migrations → tests.
 - Prefer @reference with small, targeted snippets.
 - Always reference database_schema.mdc for schema, CLI, and migration details.
+- For mds_client tasks, reference mds_client_library.mdc for client API details.
 
 STYLE
-- Python 3.11, FastAPI, Typer, SQLAlchemy 2.x, Alembic.
+- Python 3.11, FastAPI, Typer, SQLAlchemy 2.x, Alembic, psycopg 3, psycopg_pool.
 - Line length: 100 characters (enforced by Black/Ruff).
 - Keep modules cohesive, small, and documented with a top docstring.
 - Log with loguru; expose Prometheus metrics; add type hints.
 - Use pydantic BaseSettings for configuration.
+- mds_client: Use psycopg 3 + psycopg_pool for connection pooling, Pydantic v2 models.
 
 ENVIRONMENT
 - Always activate virtual environment: .\.venv\Scripts\Activate.ps1

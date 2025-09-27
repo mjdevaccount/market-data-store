@@ -3,8 +3,9 @@ SCOPE
 - Specific implementation details for datastore CLI commands.
 
 CLI STRUCTURE
-- Entry point: python -m datastore.cli
-- Commands: migrate, seed, policies
+- Entry point: python -m datastore.cli (control-plane) or mds (mds_client)
+- Control-plane commands: migrate, seed, policies, stamp-head
+- mds_client commands: ping, schema-version, write-*, latest-prices, dump, restore, ingest-ndjson, enqueue-job
 - Error handling: All commands use try/catch with loguru logging
 - Database connection: Uses get_settings() from config.py for DATABASE_URL
 
@@ -26,6 +27,13 @@ POLICIES COMMAND
 - Implementation: Stub with example retention/compression policies
 - Logs: Warning if TimescaleDB not found, info about policies
 
+STAMP-HEAD COMMAND
+- Purpose: Stamp Alembic head for fresh initdb bootstrap
+- Runs: subprocess.run(["alembic", "-c", settings.ALEMBIC_INI, "stamp", "head"])
+- Use case: When database is initialized via docker/initdb.d scripts
+- Success: logger.success() with confirmation
+- Failure: logger.error() with stderr, sys.exit(1)
+
 ERROR PATTERNS
 - File not found: logger.error() + sys.exit(1)
 - Database connection: logger.error() + sys.exit(1)
@@ -37,3 +45,5 @@ CONTEXT
 - @reference src/datastore/config.py
 - @reference seeds/seed.sql
 - @reference alembic.ini
+- @reference src/mds_client/cli.py for mds_client commands
+- @reference cursorrules/rules/mds_client_library.mdc for client library details

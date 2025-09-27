@@ -1,6 +1,7 @@
-# Rule: Datastore Library
+# Rule: Datastore Library (Control Plane)
 SCOPE
-- Provide lib scaffolding for future writes/reads/idempotency; no real DDL yet.
+- Control-plane library for migrations, policies, and admin operations.
+- Provides scaffolding for writes/reads/idempotency; no bulk data operations.
 
 REQUIREMENTS
 - Create connection helpers, session management (async or sync), and placeholders:
@@ -8,6 +9,12 @@ REQUIREMENTS
   - reads.py: tiny ops helpers only for tests.
   - idempotency.py: key builders, conflict strategies (stubs).
 - Document public functions with docstrings and expected contracts.
+- Focus on control-plane operations, not bulk data processing.
+
+NOTE
+- For bulk data operations, use mds_client library instead.
+- This library is for admin/control operations, not data ingestion.
 
 CONTEXT
 - @reference src/datastore/{writes.py,reads.py,idempotency.py,config.py}
+- @reference cursorrules/rules/mds_client_library.mdc for data operations

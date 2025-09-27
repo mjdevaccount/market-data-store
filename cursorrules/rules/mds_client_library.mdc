@@ -1,0 +1,60 @@
+# Rule: MDS Client Library
+SCOPE
+- Production-ready client library for Market Data Core integration.
+- Provides sync/async APIs, batch processing, backup/restore operations.
+
+ARCHITECTURE
+- Dual API: MDS (sync) and AMDS (async) facades with identical interfaces
+- Connection pooling: psycopg 3 + psycopg_pool for production reliability
+- RLS integration: Automatic tenant isolation via DSN options or per-connection SET
+- Performance optimization: Multiple write modes (executemany, execute_values, COPY)
+
+CORE COMPONENTS
+- client.py: MDS sync facade with ConnectionPool, upsert methods, backup/restore
+- aclient.py: AMDS async facade with AsyncConnectionPool, async methods
+- models.py: Pydantic v2 data models (Bar, Fundamentals, News, OptionSnap, LatestPrice)
+- batch.py: BatchProcessor (sync) and AsyncBatchProcessor (async) for high-throughput writes
+- cli.py: Comprehensive CLI with health, write, read, backup/restore commands
+- sql.py: Canonical SQL statements with TABLE_PRESETS and build_ndjson_select
+- errors.py: Structured exception hierarchy with psycopg error mapping
+- rls.py: Row Level Security helpers with tenant context management
+- utils.py: NDJSON processing with gzip support and model coercion
+
+WRITE MODES
+- executemany: Safe default for small batches (< 500 rows)
+- execute_values: Fast mid-size batches (500-5000 rows, sync only, requires psycopg extras)
+- COPY: Fastest for large batches (5000+ rows, sync + async, RLS-compatible)
+
+BACKUP & RESTORE
+- CSV export/import: Tenant-aware with RLS enforcement and idempotent upserts
+- NDJSON export: Round-trip compatible with to_jsonb() streaming
+- Multi-table exports: Template-based file naming with directory creation
+- Shell pipeline support: STDIN-based restore for streaming operations
+
+CLI COMMANDS
+- Health: ping, schema-version
+- Write: write-bar, write-fundamental, write-news, write-option
+- Read: latest-prices, bars-window
+- Batch: ingest-ndjson, ingest-ndjson-async
+- Backup: dump, restore, restore-async, restore-async-stdin
+- Export: dump-ndjson, dump-ndjson-async, dump-ndjson-all, dump-ndjson-async-all
+- Jobs: enqueue-job
+
+ENVIRONMENT VARIABLES
+- MDS_DSN: PostgreSQL DSN
+- MDS_TENANT_ID: Tenant UUID for RLS
+- MDS_WRITE_MODE: auto | executemany | values | copy
+- MDS_VALUES_MIN_ROWS: Threshold for execute_values
+- MDS_COPY_MIN_ROWS: Threshold for COPY
+
+CONTEXT
+- @reference src/mds_client/__init__.py
+- @reference src/mds_client/client.py
+- @reference src/mds_client/aclient.py
+- @reference src/mds_client/models.py
+- @reference src/mds_client/batch.py
+- @reference src/mds_client/cli.py
+- @reference src/mds_client/sql.py
+- @reference src/mds_client/errors.py
+- @reference src/mds_client/rls.py
+- @reference src/mds_client/utils.py

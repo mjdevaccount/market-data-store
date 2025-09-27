@@ -7,11 +7,14 @@ DATABASE SCHEMA
 - Fact tables: bars (OHLCV + timeframes), fundamentals (financial metrics), news (sentiment), options_snap (options chains)
 - Features: RLS policies for tenant isolation, updated_at triggers, optimized indexes, views (latest_prices, data_freshness, job_queue_health)
 - Multi-tenant: All fact tables have tenant_id FK with RLS policy using current_setting('app.tenant_id')::uuid
+- TimescaleDB: Hypertables with time-first composite primary keys for optimal performance
+- Primary keys: Time-first composite keys (ts, tenant_id, vendor, symbol, timeframe) for TimescaleDB compatibility
 
 CLI COMMANDS
 - migrate [target]: Run Alembic migrations (default: head)
 - seed: Apply seeds/seed.sql with default tenant and API config
 - policies: Apply TimescaleDB retention/compression policies (stub implementation)
+- stamp-head: Stamp Alembic head for fresh initdb bootstrap
 - All commands use loguru for logging and proper error handling
 
 MIGRATION STRUCTURE
@@ -20,9 +23,10 @@ MIGRATION STRUCTURE
 - alembic.ini: Complete logging configuration for pre-commit compatibility
 
 DEPENDENCIES
-- Production: fastapi, uvicorn, sqlalchemy, asyncpg, psycopg, alembic, typer, pydantic, pydantic-settings, python-dotenv, loguru, prometheus-client
+- Production: fastapi, uvicorn, sqlalchemy, asyncpg, psycopg, psycopg_pool, alembic, typer, pydantic, pydantic-settings, python-dotenv, loguru, prometheus-client
 - Development: ruff>=0.13.2, black>=25.9.0, pre-commit>=4.3.0
 - Requirements files: requirements.txt (production), requirements-dev.txt (includes dev tools)
+- mds_client: psycopg[binary,pool]>=3.2, pydantic>=2.5, typer>=0.12
 
 CONFIGURATION
 - src/datastore/config.py: Pydantic BaseSettings with DATABASE_URL, ADMIN_DATABASE_URL, APP_PORT, ADMIN_TOKEN

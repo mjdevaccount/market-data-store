@@ -118,7 +118,7 @@
     },
     {
       "path": "cursorrules/index.mdc",
-      "sha": "467c9fbc5605c4c2",
+      "sha": "530cd251a7184399",
       "summary": "# Always-Active Rules (market-data-store)"
     },
     {
@@ -133,7 +133,7 @@
     },
     {
       "path": "cursorrules/rules/cli_implementation.mdc",
-      "sha": "bbf10714218f847e",
+      "sha": "27ed620fa21f0999",
       "summary": "# Rule: CLI Implementation Details"
     },
     {
@@ -143,18 +143,23 @@
     },
     {
       "path": "cursorrules/rules/database_schema.mdc",
-      "sha": "46008253a3b37a23",
+      "sha": "ba5553fc9de78ccc",
       "summary": "# Rule: Database Schema & CLI"
     },
     {
       "path": "cursorrules/rules/datastore_lib_rules.mdc",
-      "sha": "d46f91edc496ba7d",
-      "summary": "# Rule: Datastore Library"
+      "sha": "0a681a1ae35f130d",
+      "summary": "# Rule: Datastore Library (Control Plane)"
     },
     {
       "path": "cursorrules/rules/environment_setup.mdc",
       "sha": "28b5b265db476e75",
       "summary": "# Rule: Environment Setup"
+    },
+    {
+      "path": "cursorrules/rules/mds_client_library.mdc",
+      "sha": "03ec409b8686fe8a",
+      "summary": "# Rule: MDS Client Library"
     },
     {
       "path": "cursorrules/rules/migrations_rules.mdc",

@@ -1,20 +1,9 @@
-"""
-SQL statements and parameter mappers for Market Data Store operations.
-
-All statements use the composite primary keys with time columns first
-for TimescaleDB compatibility.
-"""
-
 from __future__ import annotations
 from typing import Tuple
 from .models import Bar, Fundamentals, News, OptionSnap
 
 
 class SQL:
-    """SQL statements with conflict resolution on composite primary keys."""
-
-    # ---------- UPSERTS (Timescale: time column FIRST in conflict target)
-
     UPSERT_BARS = """
     INSERT INTO bars (ts, tenant_id, vendor, symbol, timeframe,
                       open_price, high_price, low_price, close_price, volume)
@@ -31,12 +20,11 @@ class SQL:
 
     @staticmethod
     def bar_params(r: Bar) -> Tuple:
-        sym = r.symbol.upper()
         return (
             r.ts,
             r.tenant_id,
             r.vendor,
-            sym,
+            r.symbol,
             r.timeframe,
             r.open_price,
             r.high_price,
@@ -64,24 +52,23 @@ class SQL:
             r.asof,
             r.tenant_id,
             r.vendor,
-            r.symbol.upper(),
+            r.symbol,
             r.total_assets,
             r.total_liabilities,
             r.net_income,
             r.eps,
         )
 
-    # PK is (published_at, tenant_id, vendor, id) – keep id if caller supplies one
     UPSERT_NEWS = """
     INSERT INTO news (published_at, tenant_id, vendor, id, title, url, symbol, sentiment_score)
     VALUES (%s,%s,%s,COALESCE(%s, gen_random_uuid()),%s,%s,%s,%s)
     ON CONFLICT (published_at, tenant_id, vendor, id)
     DO UPDATE SET
-      title          = EXCLUDED.title,
-      url            = EXCLUDED.url,
-      symbol         = EXCLUDED.symbol,
-      sentiment_score= EXCLUDED.sentiment_score,
-      updated_at     = NOW();
+      title           = EXCLUDED.title,
+      url             = EXCLUDED.url,
+      symbol          = EXCLUDED.symbol,
+      sentiment_score = EXCLUDED.sentiment_score,
+      updated_at      = NOW();
     """
 
     @staticmethod
@@ -93,7 +80,7 @@ class SQL:
             r.id,
             r.title,
             r.url,
-            (r.symbol.upper() if r.symbol else None),
+            r.symbol,
             r.sentiment_score,
         )
 
@@ -120,7 +107,7 @@ class SQL:
             r.ts,
             r.tenant_id,
             r.vendor,
-            r.symbol.upper(),
+            r.symbol,
             r.expiry,
             r.option_type,
             r.strike,
@@ -132,9 +119,6 @@ class SQL:
             r.spot,
         )
 
-    # ---------- READS
-
-    # Use your view for "latest per symbol"
     LATEST_PRICES = """
     SELECT tenant_id, vendor, symbol, price, price_timestamp
     FROM latest_prices
@@ -142,7 +126,6 @@ class SQL:
     ORDER BY symbol;
     """
 
-    # Windowed bars (RLS enforces tenant; we pass tenant explicitly to use an index path)
     BARS_WINDOW = """
     SELECT b.ts, b.tenant_id, b.vendor, b.symbol, b.timeframe,
            b.open_price, b.high_price, b.low_price, b.close_price, b.volume, b.id
@@ -150,4 +133,11 @@ class SQL:
     WHERE b.tenant_id = %s AND b.vendor = %s AND b.symbol = %s AND b.timeframe = %s
       AND b.ts >= %s AND b.ts < %s
     ORDER BY b.ts ASC;
+    """
+
+    ENQUEUE_JOB = """
+    INSERT INTO jobs_outbox (tenant_id, idempotency_key, job_type, payload, status, priority)
+    VALUES (%s,%s,%s,%s,%s,%s)
+    ON CONFLICT (idempotency_key) DO NOTHING
+    RETURNING id;
     """

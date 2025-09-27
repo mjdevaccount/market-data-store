@@ -1,22 +1,14 @@
-"""
-Market Data Store Client - Core API for Market Data Core.
-
-Provides sync (MDS) facade with connection pooling, RLS, and error mapping.
-"""
-
-import psycopg
+from __future__ import annotations
+from typing import Iterable, TypedDict, Optional, List
+from contextlib import contextmanager
 from psycopg_pool import ConnectionPool
-from typing import TypedDict
-
 from .models import Bar, Fundamentals, News, OptionSnap, LatestPrice
-from .sql import SQL
-from .rls import ensure_tenant_in_dsn, TenantContext
+from .rls import ensure_tenant_in_dsn
 from .errors import map_db_error
+from .sql import SQL
 
 
 class MDSConfig(TypedDict, total=False):
-    """Configuration for Market Data Store Client."""
-
     dsn: str
     tenant_id: str
     app_name: str
@@ -24,180 +16,94 @@ class MDSConfig(TypedDict, total=False):
     statement_timeout_ms: int
     pool_min: int
     pool_max: int
-    max_batch_rows: int
-    max_batch_ms: int
 
 
 class MDS:
-    """Synchronous Market Data Store Client."""
-
     def __init__(self, cfg: MDSConfig):
         dsn = cfg["dsn"]
-        if cfg.get("app_name"):
-            sep = "&" if "?" in dsn else "?"
-            dsn = f"{dsn}{sep}application_name={cfg['app_name']}"
         dsn = ensure_tenant_in_dsn(dsn, cfg.get("tenant_id"))
-        self.pool = ConnectionPool(
-            dsn, min_size=cfg.get("pool_min", 1), max_size=cfg.get("pool_max", 8)
+        self._pool = ConnectionPool(
+            dsn,
+            min_size=int(cfg.get("pool_min", 1)),
+            max_size=int(cfg.get("pool_max", 10)),
+            kwargs={"autocommit": False},
         )
-        self.statement_timeout_ms = cfg.get("statement_timeout_ms", 0)
+        self._stmt_timeout_ms = int(cfg.get("statement_timeout_ms", 0))
+        self._app_name = cfg.get("app_name", "mds_client")
 
-    def _apply_timeouts(self, conn: psycopg.Connection):
-        if self.statement_timeout_ms:
-            conn.execute(f"SET statement_timeout = {self.statement_timeout_ms};")
+    @contextmanager
+    def _conn(self):
+        with self._pool.connection() as conn:
+            try:
+                if self._stmt_timeout_ms:
+                    conn.execute(f"SET LOCAL statement_timeout = {self._stmt_timeout_ms}")
+                if self._app_name:
+                    conn.execute("SET LOCAL application_name = %s", (self._app_name,))
+                yield conn
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                raise map_db_error(e)
 
-    def tenant(self, tenant_id: str) -> TenantContext:
-        return TenantContext(self.pool, tenant_id)
+    # ---------- Health / Meta
+    def health(self) -> bool:
+        with self._conn() as c:
+            return c.execute("SELECT 1").fetchone() is not None
 
-    def health(self) -> dict:
-        try:
-            with self.pool.connection() as c, c.cursor() as cur:
-                self._apply_timeouts(c)
-                cur.execute("SELECT 1")
-                return {"ok": True}
-        except Exception as e:
-            raise map_db_error(e)
+    def schema_version(self) -> Optional[str]:
+        with self._conn() as c:
+            cur = c.execute("SELECT version_num FROM alembic_version LIMIT 1")
+            row = cur.fetchone()
+            return row[0] if row else None
 
-    def schema_version(self) -> str:
-        try:
-            with self.pool.connection() as c, c.cursor() as cur:
-                self._apply_timeouts(c)
-                cur.execute(
-                    "SELECT COALESCE(MAX(version_num::text),'unknown') FROM alembic_version"
-                )
-                return cur.fetchone()[0]
-        except Exception as e:
-            raise map_db_error(e)
+    # ---------- Writes (executemany)
+    def _execmany(self, q: str, params: Iterable[tuple]) -> int:
+        with self._conn() as c:
+            cur = c.cursor()
+            cur.executemany(q, params)
+            # rowcount unreliable for upserts; return count we attempted
+            return cur.rowcount if cur.rowcount >= 0 else 0
 
-    # ---------- writes
-    def upsert_bars(self, rows: list[Bar]) -> int:
-        if not rows:
-            return 0
-        try:
-            with self.pool.connection() as c, c.cursor() as cur:
-                self._apply_timeouts(c)
-                cur.execute("SELECT current_setting('app.tenant_id', true)")
-                if not cur.fetchone()[0]:
-                    cur.execute("SET LOCAL app.tenant_id = %s", [rows[0].tenant_id])
-                cur.executemany(SQL.UPSERT_BARS, [SQL.bar_params(r) for r in rows])
-                c.commit()
-                return cur.rowcount
-        except Exception as e:
-            raise map_db_error(e)
+    def upsert_bars(self, rows: List[Bar]) -> int:
+        return self._execmany(SQL.UPSERT_BARS, (SQL.bar_params(r) for r in rows))
 
-    def upsert_fundamentals(self, rows: list[Fundamentals]) -> int:
-        if not rows:
-            return 0
-        try:
-            with self.pool.connection() as c, c.cursor() as cur:
-                self._apply_timeouts(c)
-                cur.execute("SELECT current_setting('app.tenant_id', true)")
-                if not cur.fetchone()[0]:
-                    cur.execute("SET LOCAL app.tenant_id = %s", [rows[0].tenant_id])
-                cur.executemany(SQL.UPSERT_FUNDAMENTALS, [SQL.fund_params(r) for r in rows])
-                c.commit()
-                return cur.rowcount
-        except Exception as e:
-            raise map_db_error(e)
+    def upsert_fundamentals(self, rows: List[Fundamentals]) -> int:
+        return self._execmany(SQL.UPSERT_FUNDAMENTALS, (SQL.fund_params(r) for r in rows))
 
-    def upsert_news(self, rows: list[News]) -> int:
-        if not rows:
-            return 0
-        try:
-            with self.pool.connection() as c, c.cursor() as cur:
-                self._apply_timeouts(c)
-                cur.execute("SELECT current_setting('app.tenant_id', true)")
-                if not cur.fetchone()[0]:
-                    cur.execute("SET LOCAL app.tenant_id = %s", [rows[0].tenant_id])
-                cur.executemany(SQL.UPSERT_NEWS, [SQL.news_params(r) for r in rows])
-                c.commit()
-                return cur.rowcount
-        except Exception as e:
-            raise map_db_error(e)
+    def upsert_news(self, rows: List[News]) -> int:
+        return self._execmany(SQL.UPSERT_NEWS, (SQL.news_params(r) for r in rows))
 
-    def upsert_options(self, rows: list[OptionSnap]) -> int:
-        if not rows:
-            return 0
-        try:
-            with self.pool.connection() as c, c.cursor() as cur:
-                self._apply_timeouts(c)
-                cur.execute("SELECT current_setting('app.tenant_id', true)")
-                if not cur.fetchone()[0]:
-                    cur.execute("SET LOCAL app.tenant_id = %s", [rows[0].tenant_id])
-                cur.executemany(SQL.UPSERT_OPTIONS, [SQL.opt_params(r) for r in rows])
-                c.commit()
-                return cur.rowcount
-        except Exception as e:
-            raise map_db_error(e)
-
-    # ---------- reads
-    def latest_prices(self, symbols: list[str], vendor: str) -> list[LatestPrice]:
-        if not symbols:
-            return []
-        try:
-            with self.pool.connection() as c, c.cursor() as cur:
-                self._apply_timeouts(c)
-                cur.execute(SQL.LATEST_PRICES, (vendor, symbols))
-                return [
-                    LatestPrice(
-                        tenant_id=r[0], vendor=r[1], symbol=r[2], price=r[3], price_timestamp=r[4]
-                    )
-                    for r in cur.fetchall()
-                ]
-        except Exception as e:
-            raise map_db_error(e)
-
-    def bars_window(self, symbol: str, timeframe: str, start, end, vendor: str) -> list[Bar]:
-        try:
-            with self.pool.connection() as c, c.cursor() as cur:
-                self._apply_timeouts(c)
-                # rely on DSN options for tenant; caller must ensure it
-                cur.execute("SELECT current_setting('app.tenant_id', true)")
-                tenant = cur.fetchone()[0]
-                cur.execute(
-                    SQL.BARS_WINDOW, (tenant, vendor, symbol.upper(), timeframe, start, end)
-                )
-                return [
-                    Bar(
-                        **{
-                            "ts": r[0],
-                            "tenant_id": r[1],
-                            "vendor": r[2],
-                            "symbol": r[3],
-                            "timeframe": r[4],
-                            "open_price": r[5],
-                            "high_price": r[6],
-                            "low_price": r[7],
-                            "close_price": r[8],
-                            "volume": r[9],
-                            "id": r[10],
-                        }
-                    )
-                    for r in cur.fetchall()
-                ]
-        except Exception as e:
-            raise map_db_error(e)
+    def upsert_options(self, rows: List[OptionSnap]) -> int:
+        return self._execmany(SQL.UPSERT_OPTIONS, (SQL.opt_params(r) for r in rows))
 
     def enqueue_job(
-        self, idempotency_key: str, job_type: str, payload: dict, priority: str = "medium"
-    ) -> int:
-        """Enqueue job in outbox with idempotency."""
-        try:
-            with self.pool.connection() as c, c.cursor() as cur:
-                self._apply_timeouts(c)
-                cur.execute("SELECT current_setting('app.tenant_id', true)")
-                tenant = cur.fetchone()[0]
-                if not tenant:
-                    raise map_db_error(Exception("No tenant context set"))
+        self,
+        *,
+        tenant_id: str,
+        idempotency_key: str,
+        job_type: str,
+        payload: dict,
+        priority: str = "medium",
+        status: str = "queued",
+    ) -> Optional[int]:
+        with self._conn() as c:
+            cur = c.execute(
+                SQL.ENQUEUE_JOB, (tenant_id, idempotency_key, job_type, payload, status, priority)
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
 
-                cur.execute(
-                    "INSERT INTO jobs_outbox(tenant_id, idempotency_key, job_type, payload, priority) "
-                    "VALUES (%s, %s, %s, %s::jsonb, %s) ON CONFLICT (idempotency_key) DO NOTHING "
-                    "RETURNING id",
-                    (tenant, idempotency_key, job_type, payload, priority),
-                )
-                result = cur.fetchone()
-                c.commit()
-                return result[0] if result else 0
-        except Exception as e:
-            raise map_db_error(e)
+    # ---------- Reads
+    def latest_prices(self, symbols: List[str], vendor: str) -> List[LatestPrice]:
+        with self._conn() as c:
+            cur = c.execute(SQL.LATEST_PRICES, (vendor, symbols))
+            return [LatestPrice(**dict(row)) for row in cur.fetchall()]
+
+    def bars_window(
+        self, symbol: str, timeframe: str, start, end, vendor: str, tenant_id: str
+    ) -> List[Bar]:
+        with self._conn() as c:
+            cur = c.execute(
+                SQL.BARS_WINDOW, (tenant_id, vendor, symbol.upper(), timeframe, start, end)
+            )
+            return [Bar(**dict(row)) for row in cur.fetchall()]

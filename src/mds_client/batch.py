@@ -1,246 +1,116 @@
-"""
-Batch processing utilities for high-throughput data ingestion.
+from __future__ import annotations
 
-Provides efficient bulk operations with size/time-based flushing and
-COPY-based staging for maximum performance.
-"""
-
-from typing import Union
+import json
 from dataclasses import dataclass
+from time import monotonic
+from typing import List, Optional
 
 from .client import MDS
-from .aclient import AMDS
 from .models import Bar, Fundamentals, News, OptionSnap
-from .utils import BatchConfig, BatchWriter
-from .errors import MDSOperationalError
 
 
-@dataclass
-class BatchStats:
-    """Statistics for batch processing."""
+@dataclass(frozen=True)
+class BatchConfig:
+    """Simple size/time/bytes flush thresholds."""
 
-    total_rows: int = 0
-    total_batches: int = 0
-    total_errors: int = 0
-    avg_batch_size: float = 0.0
-    processing_time_ms: float = 0.0
+    max_rows: int = 1000  # flush after N rows across all buffers
+    max_ms: int = 5000  # or flush after this many ms
+    max_bytes: int = 1_048_576  # or flush after ~1MB of payload (roughly)
 
 
 class BatchProcessor:
     """
-    Batch processor for high-throughput data ingestion.
+    Tiny, dead-simple sync batcher for high-throughput writes via MDS.
 
-    Handles automatic flushing based on size, time, or manual triggers.
+    Usage:
+        mds = MDS({"dsn": "...", "tenant_id": "..."})
+        bp = BatchProcessor(mds, BatchConfig(max_rows=2000, max_ms=3000, max_bytes=2_000_000))
+        for bar in bars:
+            bp.add_bar(bar)
+        bp.close()  # final flush
     """
 
-    def __init__(self, client: Union[MDS, AMDS], config: BatchConfig):
-        self.client = client
-        self.config = config
-        self.writer = BatchWriter(config)
-        self.stats = BatchStats()
+    def __init__(self, mds: MDS, config: Optional[BatchConfig] = None):
+        self._mds = mds
+        self._cfg = config or BatchConfig()
+        self._t0 = monotonic()
 
-    def add_bar(self, bar: Bar) -> None:
-        """Add bar to batch."""
-        self.writer.add("bars", bar.dict())
-        if self.writer.should_flush("bars"):
-            self._flush_bars()
+        # Buffers
+        self._bars: List[Bar] = []
+        self._funds: List[Fundamentals] = []
+        self._news: List[News] = []
+        self._opts: List[OptionSnap] = []
 
-    def add_fundamental(self, fundamental: Fundamentals) -> None:
-        """Add fundamental to batch."""
-        self.writer.add("fundamentals", fundamental.dict())
-        if self.writer.should_flush("fundamentals"):
-            self._flush_fundamentals()
+        self._rows = 0
+        self._bytes = 0
 
-    def add_news(self, news: News) -> None:
-        """Add news to batch."""
-        self.writer.add("news", news.dict())
-        if self.writer.should_flush("news"):
-            self._flush_news()
+    # --------------------------- public API
 
-    def add_option(self, option: OptionSnap) -> None:
-        """Add option to batch."""
-        self.writer.add("options", option.dict())
-        if self.writer.should_flush("options"):
-            self._flush_options()
+    def add_bar(self, row: Bar) -> None:
+        self._bars.append(row)
+        self._account(row)
+        self._maybe_flush()
 
-    def _flush_bars(self) -> None:
-        """Flush bars batch."""
-        batch = self.writer.get_batch("bars")
-        if not batch:
-            return
+    def add_fundamental(self, row: Fundamentals) -> None:
+        self._funds.append(row)
+        self._account(row)
+        self._maybe_flush()
 
+    def add_news(self, row: News) -> None:
+        self._news.append(row)
+        self._account(row)
+        self._maybe_flush()
+
+    def add_option(self, row: OptionSnap) -> None:
+        self._opts.append(row)
+        self._account(row)
+        self._maybe_flush()
+
+    def flush(self) -> int:
+        """Flush all buffers. Returns total rows written (attempted)."""
+        total = 0
+        if self._bars:
+            total += self._mds.upsert_bars(self._bars)
+            self._bars.clear()
+        if self._funds:
+            total += self._mds.upsert_fundamentals(self._funds)
+            self._funds.clear()
+        if self._news:
+            total += self._mds.upsert_news(self._news)
+            self._news.clear()
+        if self._opts:
+            total += self._mds.upsert_options(self._opts)
+            self._opts.clear()
+
+        # reset counters/time window after a flush
+        if total:
+            self._rows = 0
+            self._bytes = 0
+            self._t0 = monotonic()
+        return total
+
+    def close(self) -> int:
+        """Flush remaining rows; safe to call multiple times."""
+        return self.flush()
+
+    # --------------------------- internals
+
+    def _account(self, model) -> None:
+        """Fast-ish byte estimate using JSON of the pydantic dict."""
+        self._rows += 1
         try:
-            bars = [Bar(**record) for record in batch]
-            count = self.client.upsert_bars(bars)
-            self.stats.total_rows += count
-            self.stats.total_batches += 1
-        except Exception as e:
-            self.stats.total_errors += 1
-            raise MDSOperationalError(f"Failed to flush bars batch: {e}")
+            self._bytes += len(json.dumps(model.model_dump()))
+        except Exception:
+            # worst case—fallback fixed cost
+            self._bytes += 256
 
-    def _flush_fundamentals(self) -> None:
-        """Flush fundamentals batch."""
-        batch = self.writer.get_batch("fundamentals")
-        if not batch:
+    def _maybe_flush(self) -> None:
+        if self._rows >= self._cfg.max_rows:
+            self.flush()
             return
-
-        try:
-            fundamentals = [Fundamentals(**record) for record in batch]
-            count = self.client.upsert_fundamentals(fundamentals)
-            self.stats.total_rows += count
-            self.stats.total_batches += 1
-        except Exception as e:
-            self.stats.total_errors += 1
-            raise MDSOperationalError(f"Failed to flush fundamentals batch: {e}")
-
-    def _flush_news(self) -> None:
-        """Flush news batch."""
-        batch = self.writer.get_batch("news")
-        if not batch:
+        if self._bytes >= self._cfg.max_bytes:
+            self.flush()
             return
-
-        try:
-            news = [News(**record) for record in batch]
-            count = self.client.upsert_news(news)
-            self.stats.total_rows += count
-            self.stats.total_batches += 1
-        except Exception as e:
-            self.stats.total_errors += 1
-            raise MDSOperationalError(f"Failed to flush news batch: {e}")
-
-    def _flush_options(self) -> None:
-        """Flush options batch."""
-        batch = self.writer.get_batch("options")
-        if not batch:
-            return
-
-        try:
-            options = [OptionSnap(**record) for record in batch]
-            count = self.client.upsert_options(options)
-            self.stats.total_rows += count
-            self.stats.total_batches += 1
-        except Exception as e:
-            self.stats.total_errors += 1
-            raise MDSOperationalError(f"Failed to flush options batch: {e}")
-
-    def flush_all(self) -> None:
-        """Flush all pending batches."""
-        self._flush_bars()
-        self._flush_fundamentals()
-        self._flush_news()
-        self._flush_options()
-
-    def get_stats(self) -> BatchStats:
-        """Get batch processing statistics."""
-        if self.stats.total_batches > 0:
-            self.stats.avg_batch_size = self.stats.total_rows / self.stats.total_batches
-        return self.stats
-
-
-class AsyncBatchProcessor:
-    """
-    Async batch processor for high-throughput data ingestion.
-    """
-
-    def __init__(self, client: AMDS, config: BatchConfig):
-        self.client = client
-        self.config = config
-        self.writer = BatchWriter(config)
-        self.stats = BatchStats()
-
-    async def add_bar(self, bar: Bar) -> None:
-        """Add bar to batch."""
-        self.writer.add("bars", bar.dict())
-        if self.writer.should_flush("bars"):
-            await self._flush_bars()
-
-    async def add_fundamental(self, fundamental: Fundamentals) -> None:
-        """Add fundamental to batch."""
-        self.writer.add("fundamentals", fundamental.dict())
-        if self.writer.should_flush("fundamentals"):
-            await self._flush_fundamentals()
-
-    async def add_news(self, news: News) -> None:
-        """Add news to batch."""
-        self.writer.add("news", news.dict())
-        if self.writer.should_flush("news"):
-            await self._flush_news()
-
-    async def add_option(self, option: OptionSnap) -> None:
-        """Add option to batch."""
-        self.writer.add("options", option.dict())
-        if self.writer.should_flush("options"):
-            await self._flush_options()
-
-    async def _flush_bars(self) -> None:
-        """Flush bars batch."""
-        batch = self.writer.get_batch("bars")
-        if not batch:
-            return
-
-        try:
-            bars = [Bar(**record) for record in batch]
-            count = await self.client.upsert_bars(bars)
-            self.stats.total_rows += count
-            self.stats.total_batches += 1
-        except Exception as e:
-            self.stats.total_errors += 1
-            raise MDSOperationalError(f"Failed to flush bars batch: {e}")
-
-    async def _flush_fundamentals(self) -> None:
-        """Flush fundamentals batch."""
-        batch = self.writer.get_batch("fundamentals")
-        if not batch:
-            return
-
-        try:
-            fundamentals = [Fundamentals(**record) for record in batch]
-            count = await self.client.upsert_fundamentals(fundamentals)
-            self.stats.total_rows += count
-            self.stats.total_batches += 1
-        except Exception as e:
-            self.stats.total_errors += 1
-            raise MDSOperationalError(f"Failed to flush fundamentals batch: {e}")
-
-    async def _flush_news(self) -> None:
-        """Flush news batch."""
-        batch = self.writer.get_batch("news")
-        if not batch:
-            return
-
-        try:
-            news = [News(**record) for record in batch]
-            count = await self.client.upsert_news(news)
-            self.stats.total_rows += count
-            self.stats.total_batches += 1
-        except Exception as e:
-            self.stats.total_errors += 1
-            raise MDSOperationalError(f"Failed to flush news batch: {e}")
-
-    async def _flush_options(self) -> None:
-        """Flush options batch."""
-        batch = self.writer.get_batch("options")
-        if not batch:
-            return
-
-        try:
-            options = [OptionSnap(**record) for record in batch]
-            count = await self.client.upsert_options(options)
-            self.stats.total_rows += count
-            self.stats.total_batches += 1
-        except Exception as e:
-            self.stats.total_errors += 1
-            raise MDSOperationalError(f"Failed to flush options batch: {e}")
-
-    async def flush_all(self) -> None:
-        """Flush all pending batches."""
-        await self._flush_bars()
-        await self._flush_fundamentals()
-        await self._flush_news()
-        await self._flush_options()
-
-    def get_stats(self) -> BatchStats:
-        """Get batch processing statistics."""
-        if self.stats.total_batches > 0:
-            self.stats.avg_batch_size = self.stats.total_rows / self.stats.total_batches
-        return self.stats
+        elapsed_ms = (monotonic() - self._t0) * 1000.0
+        if elapsed_ms >= self._cfg.max_ms:
+            self.flush()

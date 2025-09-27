@@ -602,6 +602,21 @@ mds dump-ndjson-async bars ./bars_export.ndjson.gz \
 # Round-trip: export then import
 mds dump-ndjson bars ./bars.ndjson --dsn "..." --tenant-id "uuid"
 mds ingest-ndjson bars ./bars.ndjson --dsn "..." --tenant-id "uuid"
+
+# Multi-table exports with template naming
+mds dump-ndjson-all \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --vendor ibkr --symbol AAPL --timeframe 1m \
+  --start 2024-01-01T00:00:00Z --end 2024-02-01T00:00:00Z
+
+# Custom naming template with directory structure
+mds dump-ndjson-all "./exports/{table}/{vendor}-{symbol}-{start}-{end}.ndjson.gz" \
+  --dsn "postgresql://..." --tenant-id "uuid" --vendor ibkr
+
+# Async multi-table export for large datasets
+mds dump-ndjson-async-all \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --start 2024-01-01 --end 2024-02-01
 ```
 
 #### Key Features
@@ -611,6 +626,42 @@ mds ingest-ndjson bars ./bars.ndjson --dsn "..." --tenant-id "uuid"
 - **Gzip support**: Automatic compression for `.ndjson.gz` files
 - **Async support**: High-performance async exports for large datasets
 - **ISO timestamps**: Timestamps serialized in ISO-8601 format for clean parsing
+- **Multi-table exports**: Export all tables at once with template-based naming
+- **Template system**: Flexible file naming with variables `{table}`, `{vendor}`, `{symbol}`, `{timeframe}`, `{start}`, `{end}`
+- **Directory creation**: Automatic parent directory creation for organized exports
+
+#### Multi-Table Export Operations
+```bash
+# Export all tables with default naming
+mds dump-ndjson-all \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --vendor ibkr --symbol AAPL --timeframe 1m \
+  --start 2024-01-01T00:00:00Z --end 2024-02-01T00:00:00Z
+# Creates: ./bars-AAPL-2024-01-01T00:00:00Z-2024-02-01T00:00:00Z.ndjson.gz
+#          ./fundamentals-AAPL-2024-01-01T00:00:00Z-2024-02-01T00:00:00Z.ndjson.gz
+#          ./news-AAPL-2024-01-01T00:00:00Z-2024-02-01T00:00:00Z.ndjson.gz
+#          ./options_snap-AAPL-2024-01-01T00:00:00Z-2024-02-01T00:00:00Z.ndjson.gz
+
+# Custom template with directory structure
+mds dump-ndjson-all "./exports/{table}/{vendor}-{symbol}-{start}-{end}.ndjson.gz" \
+  --dsn "postgresql://..." --tenant-id "uuid" --vendor ibkr
+# Creates: ./exports/bars/ibkr-AAPL-2024-01-01-2024-02-01.ndjson.gz
+#          ./exports/fundamentals/ibkr-AAPL-2024-01-01-2024-02-01.ndjson.gz
+#          etc.
+
+# Async version for large datasets
+mds dump-ndjson-async-all \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --start 2024-01-01 --end 2024-02-01
+```
+
+#### Template Variables
+- `{table}`: Table name (bars, fundamentals, news, options_snap)
+- `{vendor}`: Data vendor (e.g., ibkr, reuters) or "ALL" if not specified
+- `{symbol}`: Symbol (e.g., AAPL) or "ALL" if not specified
+- `{timeframe}`: Timeframe (e.g., 1m, 1h) or "ALL" if not specified
+- `{start}`: Start timestamp or "MIN" if not specified
+- `{end}`: End timestamp or "MAX" if not specified
 
 ### 🔄 Batch Processing
 

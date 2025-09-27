@@ -13,6 +13,8 @@ from .utils import iter_ndjson, coerce_model
 from .client import TABLE_PRESETS
 from psycopg import sql as psql
 import sys
+import re
+from pathlib import Path
 
 app = typer.Typer(help="mds_client operational CLI")
 
@@ -395,6 +397,42 @@ def restore(
 # NDJSON dump helpers
 # ---------------------------
 
+_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _safe(val: str | None, default: str) -> str:
+    if not val:
+        return default
+    return _SAFE.sub("_", val)
+
+
+def _render_template(
+    template: str,
+    *,
+    table: str,
+    vendor: str | None,
+    symbol: str | None,
+    timeframe: str | None,
+    start: str | None,
+    end: str | None,
+) -> str:
+    """Render filename template and ensure .ndjson.gz suffix."""
+    # Prepare safe mapping
+    mapping = {
+        "table": _safe(table, "table"),
+        "vendor": _safe(vendor, "ALL"),
+        "symbol": _safe(symbol.upper() if symbol else None, "ALL"),
+        "timeframe": _safe(timeframe, "ALL"),
+        "start": _safe(start, "MIN"),
+        "end": _safe(end, "MAX"),
+    }
+    path = template.format(**mapping)
+    if not (path.endswith(".ndjson") or path.endswith(".ndjson.gz")):
+        path += ".ndjson.gz"
+    # Ensure parent dir exists
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    return path
+
 
 def _build_ndjson_select(
     table: str,
@@ -496,6 +534,89 @@ def dump_ndjson_async(
         else:
             bytes_written = await amds.copy_out_ndjson(select_sql=sel, out_path=out_path)
         typer.echo(f"wrote {bytes_written} bytes")
+
+    asyncio.run(_run())
+
+
+@app.command("dump-ndjson-all")
+def dump_ndjson_all(
+    out_template: str = typer.Argument(
+        "./{table}-{symbol}-{start}-{end}.ndjson.gz",
+        help="Naming template. Vars: {table},{vendor},{symbol},{timeframe},{start},{end}",
+    ),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
+    vendor: str | None = typer.Option(None, help="Filter vendor"),
+    symbol: str | None = typer.Option(None, help="Filter symbol"),
+    timeframe: str | None = typer.Option(None, help="Filter timeframe (for bars only)"),
+    start: str | None = typer.Option(None, help="ISO start (inclusive)"),
+    end: str | None = typer.Option(None, help="ISO end (exclusive)"),
+):
+    """
+    Dump NDJSON for ALL tables (bars, fundamentals, news, options_snap) to multiple files.
+    Files are named using the provided template and gzip-compressed by default.
+    """
+    tables = ["bars", "fundamentals", "news", "options_snap"]
+    mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
+
+    total = 0
+    for tbl in tables:
+        presets = TABLE_PRESETS[tbl]
+        sel = _build_ndjson_select(tbl, presets["cols"], vendor, symbol, timeframe, start, end)
+        out_path = _render_template(
+            out_template,
+            table=tbl,
+            vendor=vendor,
+            symbol=symbol,
+            timeframe=timeframe,
+            start=start,
+            end=end,
+        )
+        bytes_written = mds.copy_out_ndjson(select_sql=sel, out_path=out_path)
+        total += bytes_written
+        typer.echo(f"{tbl}: wrote {bytes_written} bytes → {out_path}")
+    typer.echo(f"TOTAL: {total} bytes")
+
+
+@app.command("dump-ndjson-async-all")
+def dump_ndjson_async_all(
+    out_template: str = typer.Argument(
+        "./{table}-{symbol}-{start}-{end}.ndjson.gz",
+        help="Naming template. Vars: {table},{vendor},{symbol},{timeframe},{start},{end}",
+    ),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
+    vendor: str | None = typer.Option(None, help="Filter vendor"),
+    symbol: str | None = typer.Option(None, help="Filter symbol"),
+    timeframe: str | None = typer.Option(None, help="Filter timeframe (for bars only)"),
+    start: str | None = typer.Option(None, help="ISO start (inclusive)"),
+    end: str | None = typer.Option(None, help="ISO end (exclusive)"),
+):
+    """
+    Async version: dump NDJSON for ALL tables using AMDS (good for very large exports).
+    """
+    import asyncio
+
+    async def _run():
+        tables = ["bars", "fundamentals", "news", "options_snap"]
+        amds = AMDS({"dsn": dsn, "tenant_id": tenant_id})
+        total = 0
+        for tbl in tables:
+            presets = TABLE_PRESETS[tbl]
+            sel = _build_ndjson_select(tbl, presets["cols"], vendor, symbol, timeframe, start, end)
+            out_path = _render_template(
+                out_template,
+                table=tbl,
+                vendor=vendor,
+                symbol=symbol,
+                timeframe=timeframe,
+                start=start,
+                end=end,
+            )
+            bytes_written = await amds.copy_out_ndjson(select_sql=sel, out_path=out_path)
+            total += bytes_written
+            typer.echo(f"{tbl}: wrote {bytes_written} bytes → {out_path}")
+        typer.echo(f"TOTAL: {total} bytes")
 
     asyncio.run(_run())
 

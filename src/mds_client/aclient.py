@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import gzip
 import io
-from typing import Iterable, Sequence, TypedDict
+import sys
+from typing import AsyncIterator, Iterable, Sequence, TypedDict
 
 import psycopg
 from psycopg import sql as psql
@@ -13,6 +15,37 @@ from psycopg_pool import AsyncConnectionPool
 from .sql import (
     TABLE_PRESETS,
 )
+
+_CHUNK = 1024 * 1024  # 1MB chunks for streaming
+
+
+def _open_maybe_gz_write(path: str):
+    """Return a binary file-like for writing (stdout if '-')."""
+    if path == "-":
+        # write to stdout (binary)
+        return sys.stdout.buffer, False  # (fh, close_when_done)
+    if path.endswith(".gz"):
+        return gzip.open(path, "wb"), True
+    return open(path, "wb"), True
+
+
+def _open_maybe_gz_read_text(path: str):
+    """Return a text file-like for reading CSV/NDJSON (stdin if '-')."""
+    if path == "-":
+        # don't close user's stdin
+        return io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8"), False
+    if path.endswith(".gz"):
+        return gzip.open(path, "rt", encoding="utf-8"), True
+    return open(path, "rt", encoding="utf-8"), True
+
+
+async def _aiter_text_chunks(fh: io.TextIOBase, size: int = _CHUNK) -> AsyncIterator[str]:
+    """Async generator yielding text chunks from a file-like using a thread offload."""
+    while True:
+        chunk = await asyncio.to_thread(fh.read, size)
+        if not chunk:
+            break
+        yield chunk
 
 
 def upsert_statement(
@@ -282,20 +315,106 @@ class AMDS:
         finally:
             writer.close()
 
-    async def copy_out_ndjson(self, *, select_sql: psql.Composed, out_path: str) -> int:
-        copy_sql = copy_to_stdout_ndjson(select_sql)
-        writer = gzip.open(out_path, "wb") if out_path.endswith(".gz") else open(out_path, "wb")
+    async def copy_out_ndjson_async(self, *, select_sql: psql.SQL, out_path: str) -> int:
+        """
+        COPY (SELECT to_jsonb(...)) TO STDOUT into NDJSON file (or stdout if '-').
+        Returns the total bytes written. Gzip supported via *.gz.
+        """
+        total = 0
+        fh, should_close = _open_maybe_gz_write(out_path)
         try:
-            async for conn in self._conn():
-                async with conn.cursor() as cur, cur.copy(copy_sql) as cp:
-                    n = 0
-                    while True:
-                        chunk = await cp.read()
-                        if not chunk:
-                            break
-                        writer.write(chunk)
-                        writer.write(b"\n")
-                        n += len(chunk) + 1
-                    return n
+            async with self.pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    copy_sql = psql.SQL("COPY ({sel}) TO STDOUT").format(sel=select_sql)
+                    async with cur.copy(copy_sql) as cp:
+                        # cp.read() yields bytes (server text stream)
+                        while True:
+                            data = await cp.read()
+                            if not data:
+                                break
+                            # write bytes without decoding
+                            await asyncio.to_thread(fh.write, data)
+                            total += len(data)
+            # flush to disk if needed
+            await asyncio.to_thread(fh.flush)
         finally:
-            writer.close()
+            if should_close:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+        return total
+
+    async def copy_restore_csv_async(
+        self,
+        *,
+        target: str,
+        cols: Sequence[str],
+        conflict_cols: Sequence[str],
+        update_cols: Sequence[str],
+        src_path: str,
+        csv_has_header: bool = True,
+        csv_delimiter: str = ",",
+    ) -> int:
+        """
+        Restore CSV (optionally .gz or stdin '-') using a TEMP staging table,
+        then INSERT ... ON CONFLICT DO UPDATE into {target}.
+        Returns affected row count.
+        """
+        col_idents = psql.SQL(", ").join(psql.Identifier(c) for c in cols)
+        conflict_idents = psql.SQL(", ").join(psql.Identifier(c) for c in conflict_cols)
+        set_list = psql.SQL(", ").join(
+            psql.SQL("{c}=EXCLUDED.{c}").format(c=psql.Identifier(c)) for c in update_cols
+        )
+        tmp = psql.Identifier(f"_staging_{target}")
+
+        async with self.pool.connection() as conn:
+            async with conn.cursor() as cur:
+                # Create staging table (inherits defaults for consistent types)
+                await cur.execute(
+                    psql.SQL("CREATE TEMP TABLE {tmp} (LIKE {t} INCLUDING DEFAULTS)").format(
+                        tmp=tmp, t=psql.Identifier(target)
+                    )
+                )
+
+                copy_sql = psql.SQL(
+                    "COPY {tmp} ({cols}) FROM STDIN WITH (FORMAT csv, HEADER {hdr}, DELIMITER {delim})"
+                ).format(
+                    tmp=tmp,
+                    cols=col_idents,
+                    hdr=psql.Literal("true" if csv_has_header else "false"),
+                    delim=psql.Literal(csv_delimiter),
+                )
+
+                fh, should_close = _open_maybe_gz_read_text(src_path)
+                try:
+                    async with cur.copy(copy_sql) as cp:
+                        async for chunk in _aiter_text_chunks(fh):
+                            await cp.write(chunk)
+                finally:
+                    if should_close:
+                        try:
+                            fh.close()
+                        except Exception:
+                            pass
+
+                # Upsert from staging into target
+                insert_sql = (
+                    psql.SQL("INSERT INTO {t} ({cols}) ")
+                    + psql.SQL("SELECT {cols} FROM {tmp} ")
+                    + psql.SQL("ON CONFLICT ({conflict}) DO UPDATE SET {set_list}")
+                ).format(
+                    t=psql.Identifier(target),
+                    cols=col_idents,
+                    tmp=tmp,
+                    conflict=conflict_idents,
+                    set_list=set_list,
+                )
+
+                await cur.execute(insert_sql)
+                affected = cur.rowcount or 0
+
+                # Keep planner fresh after heavy loads
+                await cur.execute(psql.SQL("ANALYZE {t}").format(t=psql.Identifier(target)))
+
+        return affected

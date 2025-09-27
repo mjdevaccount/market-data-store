@@ -204,6 +204,7 @@ Both clients support:
 - **Statement timeouts** with per-connection configuration
 - **Structured error handling** with psycopg error mapping and retry logic
 - **Job outbox pattern** with idempotency key support
+- **Performance optimization** with multiple write modes: `executemany` (default), `execute_values` (sync), and `COPY` (fastest)
 
 ### 📊 Data Models
 
@@ -285,7 +286,7 @@ class LatestPrice(BaseModel):
 
 #### Client Configuration
 ```python
-# MDS (sync) configuration
+# MDS (sync) configuration with performance tuning
 mds = MDS({
     "dsn": "postgresql://user:pass@host:port/db?options=-c%20app.tenant_id%3D<uuid>",
     "tenant_id": "uuid-string",        # Optional: overrides DSN tenant_id
@@ -294,6 +295,11 @@ mds = MDS({
     "statement_timeout_ms": 30000,     # Query timeout in milliseconds
     "pool_min": 1,                     # Minimum connections in pool
     "pool_max": 10,                    # Maximum connections in pool
+    # Performance optimization settings
+    "write_mode": "auto",              # "auto" | "executemany" | "values" | "copy"
+    "values_min_rows": 500,           # Use execute_values for >= N rows
+    "values_page_size": 1000,         # Page size for execute_values
+    "copy_min_rows": 5000,            # Use COPY for >= N rows
 })
 
 # AMDS (async) configuration
@@ -302,6 +308,8 @@ amds = AMDS({
     "tenant_id": "uuid-string",
     "app_name": "mds_client_async",
     "pool_max": 10,                    # Async pool typically larger
+    "write_mode": "auto",              # "auto" | "executemany" | "copy"
+    "copy_min_rows": 5000,            # Use COPY for >= N rows
 })
 ```
 
@@ -422,6 +430,47 @@ mds ingest-ndjson-async bars ./bars.ndjson \
   --max-rows 2000 --max-ms 3000
 ```
 
+### ⚡ Performance Optimization
+
+The library provides multiple write modes for optimal performance across different batch sizes:
+
+#### Write Mode Selection (Auto)
+```python
+# Automatic mode selection based on batch size
+mds = MDS({
+    "write_mode": "auto",              # Default: intelligent selection
+    "values_min_rows": 500,           # Use execute_values for >= 500 rows
+    "copy_min_rows": 5000,            # Use COPY for >= 5000 rows
+})
+
+# Behavior:
+# len(rows) >= 5000 → COPY (fastest, sync + async)
+# len(rows) >= 500  → execute_values (fast, sync only)
+# len(rows) < 500   → executemany (safe default)
+```
+
+#### Manual Mode Selection
+```python
+# Force specific write modes
+mds = MDS({"write_mode": "executemany"})  # Always use executemany
+mds = MDS({"write_mode": "values"})       # Force execute_values (sync only)
+mds = MDS({"write_mode": "copy"})         # Force COPY path
+```
+
+#### Environment Variable Configuration
+```bash
+# Set via environment variables
+export MDS_WRITE_MODE=auto
+export MDS_VALUES_MIN_ROWS=500
+export MDS_VALUES_PAGE_SIZE=1000
+export MDS_COPY_MIN_ROWS=5000
+```
+
+#### Performance Characteristics
+- **`executemany`**: Safe default, good for small batches (< 500 rows)
+- **`execute_values`**: Fast for mid-size batches (500-5000 rows), sync only
+- **`COPY`**: Fastest for large batches (5000+ rows), works with RLS and maintains idempotency
+
 ### 🔄 Batch Processing
 
 For high-throughput scenarios, the library supports both sync and async batch processing:
@@ -453,6 +502,10 @@ async with AsyncBatchProcessor(amds, BatchConfig(max_rows=1000, max_ms=5000)) as
 - **RLS Integration**: Automatic tenant isolation via DSN options or per-connection SET
 - **TimescaleDB Compatible**: Time-first composite primary keys with idempotent upserts
 - **Connection Pooling**: Production-ready with psycopg 3 + psycopg_pool
+- **Performance Optimization**: Multiple write modes with automatic selection:
+  - `executemany`: Safe default for small batches
+  - `execute_values`: Fast mid-size batches (sync only, requires psycopg extras)
+  - `COPY`: Fastest for large batches (sync + async)
 - **Batch Processing**: High-throughput ingestion with byte-accurate sizing and auto-flush tickers
 - **Structured Errors**: Comprehensive exception hierarchy with psycopg error mapping
 - **Environment Variables**: CLI support for MDS_DSN and MDS_TENANT_ID

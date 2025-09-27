@@ -1,16 +1,29 @@
 from __future__ import annotations
 
+import io
+import csv
 import uuid
+import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Iterable, Optional, Sequence
 
 import psycopg
+from psycopg import sql as psql
 from psycopg_pool import ConnectionPool
+
+# Optional, only used if write_mode == "values"
+try:
+    from psycopg.extras import execute_values  # psycopg3 extras
+
+    _HAS_EXECUTE_VALUES = True
+except Exception:
+    _HAS_EXECUTE_VALUES = False
 
 from .models import Bar, Fundamentals, News, OptionSnap, LatestPrice
 from . import sql as q
 
+# --- errors fallback ---
 try:
     from .errors import (
         MDSOperationalError,
@@ -19,7 +32,7 @@ try:
         RLSDenied,
         TimeoutExceeded,
     )
-except Exception:  # minimal fallback
+except Exception:
 
     class MDSOperationalError(Exception): ...
 
@@ -41,19 +54,27 @@ class _Cfg:
     statement_timeout_ms: Optional[int] = None
     pool_min: int = 1
     pool_max: int = 10
+    # ---- fast-path toggles ----
+    # auto: choose COPY for very large sets, VALUES for mid-size (if available), else executemany
+    # values: force execute_values (if available) else executemany
+    # copy: force COPY path
+    # executemany: always psycopg executemany
+    write_mode: str = os.environ.get("MDS_WRITE_MODE", "auto")
+    values_min_rows: int = int(os.environ.get("MDS_VALUES_MIN_ROWS", "500"))
+    values_page_size: int = int(os.environ.get("MDS_VALUES_PAGE_SIZE", "1000"))
+    copy_min_rows: int = int(os.environ.get("MDS_COPY_MIN_ROWS", "5000"))
 
 
 class MDS:
     def __init__(self, config: dict):
         c = _Cfg(**config)
         self._cfg = c
-        # You can pass options in DSN too; timeout controlled by server param/SET below
         self._pool = ConnectionPool(
             conninfo=c.dsn,
             min_size=c.pool_min,
             max_size=c.pool_max,
             timeout=c.connect_timeout,
-            kwargs={},  # leave defaults (autocommit False)
+            kwargs={},  # defaults
         )
 
     def close(self) -> None:
@@ -64,7 +85,6 @@ class MDS:
     @contextmanager
     def _conn(self):
         with self._pool.connection() as conn:
-            # Per-connection session config
             with conn.cursor() as cur:
                 if self._cfg.app_name:
                     cur.execute("SET application_name = %s", (self._cfg.app_name,))
@@ -83,8 +103,19 @@ class MDS:
 
     @staticmethod
     def _dicts(rows: Iterable) -> list[dict]:
-        # pydantic v2
         return [r.model_dump(mode="python") if hasattr(r, "model_dump") else r for r in rows]
+
+    def _choose_mode(self, nrows: int) -> str:
+        mode = (self._cfg.write_mode or "auto").lower()
+        if mode == "auto":
+            if nrows >= self._cfg.copy_min_rows:
+                return "copy"
+            if _HAS_EXECUTE_VALUES and nrows >= self._cfg.values_min_rows:
+                return "values"
+            return "executemany"
+        if mode == "values" and not _HAS_EXECUTE_VALUES:
+            return "executemany"
+        return mode
 
     # ---------- admin / health ----------
 
@@ -136,33 +167,317 @@ class MDS:
             )
             return cur.fetchall()
 
+    # ---------- generic fast paths ----------
+
+    @staticmethod
+    def _csv_bytes(rows: list[dict], cols: list[str]) -> bytes:
+        buf = io.StringIO()
+        w = csv.writer(buf, lineterminator="\n")
+        for r in rows:
+            w.writerow([r.get(c) if r.get(c) is not None else r.get(c) for c in cols])
+        return buf.getvalue().encode()
+
+    def _copy_upsert(
+        self,
+        conn: psycopg.Connection,
+        *,
+        target: str,
+        cols: list[str],
+        conflict_cols: list[str],
+        update_cols: list[str],
+    ) -> int:
+        tmp = f"tmp_{target}_{uuid.uuid4().hex[:8]}"
+        with conn.cursor() as cur:
+            # temp table mirrors target (safe and future-proof)
+            cur.execute(
+                psql.SQL("CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS)").format(
+                    psql.Identifier(tmp), psql.Identifier(target)
+                )
+            )
+            # COPY into temp (only the needed cols)
+            copy_sql = psql.SQL("COPY {} ({}) FROM STDIN WITH (FORMAT csv)").format(
+                psql.Identifier(tmp),
+                psql.SQL(", ").join(psql.Identifier(c) for c in cols),
+            )
+            data = self._csv_bytes(self._pending_rows, cols)  # filled by caller
+            with cur.copy(copy_sql) as cp:
+                cp.write(data)
+
+            # Upsert from temp
+            insert_sql = psql.SQL(
+                """
+                INSERT INTO {} ({cols})
+                SELECT {cols} FROM {}
+                ON CONFLICT ({conflict}) DO UPDATE
+                SET {updates}, updated_at = NOW()
+            """
+            ).format(
+                psql.Identifier(target),
+                psql.Identifier(tmp),
+                cols=psql.SQL(", ").join(psql.Identifier(c) for c in cols),
+                conflict=psql.SQL(", ").join(psql.Identifier(c) for c in conflict_cols),
+                updates=psql.SQL(", ").join(
+                    psql.SQL("{} = EXCLUDED.{}").format(psql.Identifier(c), psql.Identifier(c))
+                    for c in update_cols
+                ),
+            )
+            cur.execute(insert_sql)
+            # ON COMMIT DROP cleans temp
+            return cur.rowcount
+
+    def _values_upsert(
+        self,
+        cur: psycopg.Cursor,
+        *,
+        target: str,
+        cols: list[str],
+        conflict_cols: list[str],
+        update_cols: list[str],
+        rows: list[dict],
+        page_size: int,
+    ) -> int:
+        # Build "INSERT ... VALUES %s ON CONFLICT (...) DO UPDATE SET ..."
+        base_sql = psql.SQL(
+            "INSERT INTO {} ({}) VALUES %s ON CONFLICT ({}) DO UPDATE SET {} , updated_at = NOW()"
+        ).format(
+            psql.Identifier(target),
+            psql.SQL(", ").join(psql.Identifier(c) for c in cols),
+            psql.SQL(", ").join(psql.Identifier(c) for c in conflict_cols),
+            psql.SQL(", ").join(
+                psql.SQL("{} = EXCLUDED.{}").format(psql.Identifier(c), psql.Identifier(c))
+                for c in update_cols
+            ),
+        )
+        # execute_values needs a list of tuples in column order
+        tuples = [tuple(r.get(c) for c in cols) for r in rows]
+        execute_values(cur, base_sql.as_string(cur), tuples, page_size=page_size)
+        return len(tuples)
+
     # ---------- writes (UPSERTS) ----------
 
     def upsert_bars(self, rows: Sequence[Bar]) -> int:
         payload = self._dicts(rows)
+        if not payload:
+            return 0
+        for r in payload:
+            r["symbol"] = r["symbol"].upper()
+
+        mode = self._choose_mode(len(payload))
         with self._conn() as conn, conn.cursor() as cur:
+            if mode == "copy":
+                self._pending_rows = payload
+                return self._copy_upsert(
+                    conn,
+                    target="bars",
+                    cols=[
+                        "ts",
+                        "tenant_id",
+                        "vendor",
+                        "symbol",
+                        "timeframe",
+                        "open_price",
+                        "high_price",
+                        "low_price",
+                        "close_price",
+                        "volume",
+                    ],
+                    conflict_cols=["ts", "tenant_id", "vendor", "symbol", "timeframe"],
+                    update_cols=["open_price", "high_price", "low_price", "close_price", "volume"],
+                )
+            if mode == "values":
+                return self._values_upsert(
+                    cur,
+                    target="bars",
+                    cols=[
+                        "ts",
+                        "tenant_id",
+                        "vendor",
+                        "symbol",
+                        "timeframe",
+                        "open_price",
+                        "high_price",
+                        "low_price",
+                        "close_price",
+                        "volume",
+                    ],
+                    conflict_cols=["ts", "tenant_id", "vendor", "symbol", "timeframe"],
+                    update_cols=["open_price", "high_price", "low_price", "close_price", "volume"],
+                    rows=payload,
+                    page_size=self._cfg.values_page_size,
+                )
+            # default executemany
             cur.executemany(q.UPSERT_BARS, payload)
             return len(payload)
 
     def upsert_fundamentals(self, rows: Sequence[Fundamentals]) -> int:
         payload = self._dicts(rows)
+        if not payload:
+            return 0
+        for r in payload:
+            r["symbol"] = r["symbol"].upper()
+        mode = self._choose_mode(len(payload))
         with self._conn() as conn, conn.cursor() as cur:
+            if mode == "copy":
+                self._pending_rows = payload
+                return self._copy_upsert(
+                    conn,
+                    target="fundamentals",
+                    cols=[
+                        "asof",
+                        "tenant_id",
+                        "vendor",
+                        "symbol",
+                        "total_assets",
+                        "total_liabilities",
+                        "net_income",
+                        "eps",
+                    ],
+                    conflict_cols=["asof", "tenant_id", "vendor", "symbol"],
+                    update_cols=["total_assets", "total_liabilities", "net_income", "eps"],
+                )
+            if mode == "values":
+                return self._values_upsert(
+                    cur,
+                    target="fundamentals",
+                    cols=[
+                        "asof",
+                        "tenant_id",
+                        "vendor",
+                        "symbol",
+                        "total_assets",
+                        "total_liabilities",
+                        "net_income",
+                        "eps",
+                    ],
+                    conflict_cols=["asof", "tenant_id", "vendor", "symbol"],
+                    update_cols=["total_assets", "total_liabilities", "net_income", "eps"],
+                    rows=payload,
+                    page_size=self._cfg.values_page_size,
+                )
             cur.executemany(q.UPSERT_FUNDAMENTALS, payload)
             return len(payload)
 
     def upsert_news(self, rows: Sequence[News]) -> int:
         payload = self._dicts(rows)
-        # ensure an id (PK requires it)
+        if not payload:
+            return 0
         for r in payload:
             if not r.get("id"):
                 r["id"] = str(uuid.uuid4())
+            # title/url/symbol may be None; ok
+        mode = self._choose_mode(len(payload))
         with self._conn() as conn, conn.cursor() as cur:
+            if mode == "copy":
+                self._pending_rows = payload
+                return self._copy_upsert(
+                    conn,
+                    target="news",
+                    cols=[
+                        "published_at",
+                        "tenant_id",
+                        "vendor",
+                        "id",
+                        "symbol",
+                        "title",
+                        "url",
+                        "sentiment_score",
+                    ],
+                    conflict_cols=["published_at", "tenant_id", "vendor", "id"],
+                    update_cols=["symbol", "title", "url", "sentiment_score"],
+                )
+            if mode == "values":
+                return self._values_upsert(
+                    cur,
+                    target="news",
+                    cols=[
+                        "published_at",
+                        "tenant_id",
+                        "vendor",
+                        "id",
+                        "symbol",
+                        "title",
+                        "url",
+                        "sentiment_score",
+                    ],
+                    conflict_cols=["published_at", "tenant_id", "vendor", "id"],
+                    update_cols=["symbol", "title", "url", "sentiment_score"],
+                    rows=payload,
+                    page_size=self._cfg.values_page_size,
+                )
             cur.executemany(q.UPSERT_NEWS, payload)
             return len(payload)
 
     def upsert_options(self, rows: Sequence[OptionSnap]) -> int:
         payload = self._dicts(rows)
+        if not payload:
+            return 0
+        for r in payload:
+            r["symbol"] = r["symbol"].upper()
+        mode = self._choose_mode(len(payload))
         with self._conn() as conn, conn.cursor() as cur:
+            if mode == "copy":
+                self._pending_rows = payload
+                return self._copy_upsert(
+                    conn,
+                    target="options_snap",
+                    cols=[
+                        "ts",
+                        "tenant_id",
+                        "vendor",
+                        "symbol",
+                        "expiry",
+                        "option_type",
+                        "strike",
+                        "iv",
+                        "delta",
+                        "gamma",
+                        "oi",
+                        "volume",
+                        "spot",
+                    ],
+                    conflict_cols=[
+                        "ts",
+                        "tenant_id",
+                        "vendor",
+                        "symbol",
+                        "expiry",
+                        "option_type",
+                        "strike",
+                    ],
+                    update_cols=["iv", "delta", "gamma", "oi", "volume", "spot"],
+                )
+            if mode == "values":
+                return self._values_upsert(
+                    cur,
+                    target="options_snap",
+                    cols=[
+                        "ts",
+                        "tenant_id",
+                        "vendor",
+                        "symbol",
+                        "expiry",
+                        "option_type",
+                        "strike",
+                        "iv",
+                        "delta",
+                        "gamma",
+                        "oi",
+                        "volume",
+                        "spot",
+                    ],
+                    conflict_cols=[
+                        "ts",
+                        "tenant_id",
+                        "vendor",
+                        "symbol",
+                        "expiry",
+                        "option_type",
+                        "strike",
+                    ],
+                    update_cols=["iv", "delta", "gamma", "oi", "volume", "spot"],
+                    rows=payload,
+                    page_size=self._cfg.values_page_size,
+                )
             cur.executemany(q.UPSERT_OPTIONS, payload)
             return len(payload)
 

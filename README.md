@@ -1,12 +1,13 @@
 # market-data-store
 
-Thin **control-plane** for the market data database:
+**Control-plane** for the market data database with **client library** for Market Data Core:
 
 - **Migrations & policies** (TimescaleDB)
 - **Admin endpoints**: health, readiness, schema/version, migrate, retention/compression, backfills, aggregates
 - **Prometheus** metrics
+- **`mds_client` library**: Production-ready Python client for Market Data Core with sync/async APIs, RLS, and tenant isolation
 
-> No bulk reads/writes via HTTP. Orchestrator writes via the `datastore` library; readers query DB directly or via a future analytics API.
+> The `mds_client` library provides direct in-process access for Market Data Core. No HTTP latency - Core imports and uses the library directly with connection pooling, RLS, and TimescaleDB integration.
 
 ## 📂 Project Layout & Description
 
@@ -39,7 +40,7 @@ Below is a snapshot of the repo's structure with logical groupings to help new c
 
 ### 🚀 **Service Layer**
 ```bash
-├── src/datastore/                 # Data access, write/read ops, CLI
+├── src/datastore/                 # Control-plane: migrations, policies, admin endpoints
 │   ├── __init__.py                # Package init
 │   ├── cli.py                     # CLI for migrations, policies, seeds
 │   ├── config.py                  # App configuration
@@ -48,6 +49,16 @@ Below is a snapshot of the repo's structure with logical groupings to help new c
 │   ├── writes.py                  # Write ops (batch/upserts)
 │   └── service/                   # FastAPI service layer
 │       └── app.py                 # FastAPI app with admin endpoints
+└── src/mds_client/                # Client library for Market Data Core
+    ├── __init__.py                # Library exports (MDS, AMDS, models)
+    ├── client.py                  # Sync/async client facades
+    ├── models.py                  # Pydantic data models
+    ├── sql.py                     # SQL statements with conflict resolution
+    ├── rls.py                     # Row Level Security helpers
+    ├── errors.py                  # Structured exception hierarchy
+    ├── utils.py                   # Time/size helpers, batch utilities
+    ├── batch.py                   # High-throughput batch processing
+    └── cli.py                     # Operational CLI commands
 ```
 
 ### 🤖 **Automation Rules**
@@ -67,7 +78,11 @@ Below is a snapshot of the repo's structure with logical groupings to help new c
 
 📊 **Policies & Aggregates** → [`/src/datastore/timescale_policies.py`](src/datastore/timescale_policies.py), [`/src/datastore/aggregates.py`](src/datastore/aggregates.py)
 
-🛠️ **CLI Commands** → [`/src/datastore/cli.py`](src/datastore/cli.py)
+🛠️ **Control-plane CLI** → [`/src/datastore/cli.py`](src/datastore/cli.py)
+
+📦 **Client Library** → [`/src/mds_client/`](src/mds_client/) - For Market Data Core integration
+
+🔧 **Client CLI** → [`/src/mds_client/cli.py`](src/mds_client/cli.py) - Operational commands (`mds` command)
 
 🤖 **Cursor Rules & Automation** → [`/cursorrules/`](cursorrules/) (Cursor's self-bootstrap home)
 
@@ -125,6 +140,52 @@ python -m datastore.cli policies
 # For a completely fresh database, you can use the production schema directly
 # See DATABASE_SETUP.md for detailed instructions
 ```
+
+## 📦 Client Library Usage
+
+The `mds_client` library provides production-ready APIs for Market Data Core:
+
+### For Market Data Core (Async)
+```python
+from mds_client import AMDS, Bar
+
+# Configuration with tenant isolation
+amds = AMDS({
+    "dsn": "postgresql://user:pass@host:port/db?options=-c%20app.tenant_id%3D<uuid>",
+    "pool_max": 10
+})
+
+# Write market data
+await amds.upsert_bars([Bar(
+    tenant_id="uuid", vendor="ibkr", symbol="AAPL", timeframe="1m",
+    ts=now, close_price=150.5, volume=1000
+)])
+
+# Get latest prices for hot cache
+prices = await amds.latest_prices(["AAPL", "MSFT"], vendor="ibkr")
+```
+
+### For Operations (Sync CLI)
+```bash
+# Health check
+mds ping --dsn "postgresql://..." --tenant-id "uuid"
+
+# Write data
+mds write-bar --dsn "..." --tenant-id "uuid" --vendor "ibkr" \
+  --symbol "AAPL" --timeframe "1m" --ts "2024-01-01T10:00:00" \
+  --close-price 150.5
+
+# Get latest prices
+mds latest-prices --dsn "..." --vendor "ibkr" --symbols "AAPL,MSFT"
+```
+
+### Key Features
+- **Dual API**: Sync (`MDS`) and async (`AMDS`) facades
+- **RLS Integration**: Automatic tenant isolation via DSN options
+- **TimescaleDB Compatible**: Composite primary keys with time columns first
+- **Connection Pooling**: Production-ready with psycopg 3
+- **Batch Processing**: High-throughput ingestion with size/time-based flushing
+- **Structured Errors**: Comprehensive exception hierarchy with retry logic
 
 ### Dependencies
 

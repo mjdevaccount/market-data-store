@@ -51,7 +51,8 @@ Below is a snapshot of the repo's structure with logical groupings to help new c
 │       └── app.py                 # FastAPI app with admin endpoints
 └── src/mds_client/                # Client library for Market Data Core
     ├── __init__.py                # Library exports (MDS, AMDS, models)
-    ├── client.py                  # Sync/async client facades
+    ├── client.py                  # MDS (sync client facade)
+    ├── aclient.py                 # AMDS (async client facade)
     ├── models.py                  # Pydantic data models
     ├── sql.py                     # SQL statements with conflict resolution
     ├── rls.py                     # Row Level Security helpers
@@ -94,7 +95,7 @@ Below is a snapshot of the repo's structure with logical groupings to help new c
 
 ### Prerequisites
 - Python 3.11+
-- PostgreSQL 13+ (with TimescaleDB extension optional)
+- PostgreSQL 13+ with **TimescaleDB extension** (required)
 - Virtual environment
 
 ### Installation

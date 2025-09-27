@@ -8,10 +8,11 @@ COPY-based staging for maximum performance.
 from typing import Union
 from dataclasses import dataclass
 
-from .client import MDS, AMDS
+from .client import MDS
+from .aclient import AMDS
 from .models import Bar, Fundamentals, News, OptionSnap
 from .utils import BatchConfig, BatchWriter
-from .errors import MDSError
+from .errors import MDSOperationalError
 
 
 @dataclass
@@ -75,7 +76,7 @@ class BatchProcessor:
             self.stats.total_batches += 1
         except Exception as e:
             self.stats.total_errors += 1
-            raise MDSError(f"Failed to flush bars batch: {e}")
+            raise MDSOperationalError(f"Failed to flush bars batch: {e}")
 
     def _flush_fundamentals(self) -> None:
         """Flush fundamentals batch."""
@@ -90,7 +91,7 @@ class BatchProcessor:
             self.stats.total_batches += 1
         except Exception as e:
             self.stats.total_errors += 1
-            raise MDSError(f"Failed to flush fundamentals batch: {e}")
+            raise MDSOperationalError(f"Failed to flush fundamentals batch: {e}")
 
     def _flush_news(self) -> None:
         """Flush news batch."""
@@ -105,7 +106,7 @@ class BatchProcessor:
             self.stats.total_batches += 1
         except Exception as e:
             self.stats.total_errors += 1
-            raise MDSError(f"Failed to flush news batch: {e}")
+            raise MDSOperationalError(f"Failed to flush news batch: {e}")
 
     def _flush_options(self) -> None:
         """Flush options batch."""
@@ -120,7 +121,7 @@ class BatchProcessor:
             self.stats.total_batches += 1
         except Exception as e:
             self.stats.total_errors += 1
-            raise MDSError(f"Failed to flush options batch: {e}")
+            raise MDSOperationalError(f"Failed to flush options batch: {e}")
 
     def flush_all(self) -> None:
         """Flush all pending batches."""
@@ -184,7 +185,7 @@ class AsyncBatchProcessor:
             self.stats.total_batches += 1
         except Exception as e:
             self.stats.total_errors += 1
-            raise MDSError(f"Failed to flush bars batch: {e}")
+            raise MDSOperationalError(f"Failed to flush bars batch: {e}")
 
     async def _flush_fundamentals(self) -> None:
         """Flush fundamentals batch."""
@@ -199,7 +200,7 @@ class AsyncBatchProcessor:
             self.stats.total_batches += 1
         except Exception as e:
             self.stats.total_errors += 1
-            raise MDSError(f"Failed to flush fundamentals batch: {e}")
+            raise MDSOperationalError(f"Failed to flush fundamentals batch: {e}")
 
     async def _flush_news(self) -> None:
         """Flush news batch."""
@@ -214,7 +215,7 @@ class AsyncBatchProcessor:
             self.stats.total_batches += 1
         except Exception as e:
             self.stats.total_errors += 1
-            raise MDSError(f"Failed to flush news batch: {e}")
+            raise MDSOperationalError(f"Failed to flush news batch: {e}")
 
     async def _flush_options(self) -> None:
         """Flush options batch."""
@@ -229,7 +230,7 @@ class AsyncBatchProcessor:
             self.stats.total_batches += 1
         except Exception as e:
             self.stats.total_errors += 1
-            raise MDSError(f"Failed to flush options batch: {e}")
+            raise MDSOperationalError(f"Failed to flush options batch: {e}")
 
     async def flush_all(self) -> None:
         """Flush all pending batches."""

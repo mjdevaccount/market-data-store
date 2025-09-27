@@ -177,3 +177,27 @@ class MDS:
                 ]
         except Exception as e:
             raise map_db_error(e)
+
+    def enqueue_job(
+        self, idempotency_key: str, job_type: str, payload: dict, priority: str = "medium"
+    ) -> int:
+        """Enqueue job in outbox with idempotency."""
+        try:
+            with self.pool.connection() as c, c.cursor() as cur:
+                self._apply_timeouts(c)
+                cur.execute("SELECT current_setting('app.tenant_id', true)")
+                tenant = cur.fetchone()[0]
+                if not tenant:
+                    raise map_db_error(Exception("No tenant context set"))
+
+                cur.execute(
+                    "INSERT INTO jobs_outbox(tenant_id, idempotency_key, job_type, payload, priority) "
+                    "VALUES (%s, %s, %s, %s::jsonb, %s) ON CONFLICT (idempotency_key) DO NOTHING "
+                    "RETURNING id",
+                    (tenant, idempotency_key, job_type, payload, priority),
+                )
+                result = cur.fetchone()
+                c.commit()
+                return result[0] if result else 0
+        except Exception as e:
+            raise map_db_error(e)

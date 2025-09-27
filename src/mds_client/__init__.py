@@ -26,6 +26,7 @@ from .errors import (
     RLSDenied,
     TimeoutExceeded,
 )
+from .batch import BatchProcessor
 
 __version__ = "1.0.0"
 __all__ = [
@@ -42,4 +43,5 @@ __all__ = [
     "ConstraintViolation",
     "RLSDenied",
     "TimeoutExceeded",
+    "BatchProcessor",
 ]

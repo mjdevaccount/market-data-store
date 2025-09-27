@@ -53,7 +53,7 @@
     },
     {
       "path": "src/mds_client/batch.py",
-      "sha": "45295b459a356494",
+      "sha": "3da5526967c14292",
       "summary": "\"\"\""
     },
     {
@@ -63,7 +63,7 @@
     },
     {
       "path": "src/mds_client/client.py",
-      "sha": "c4b6157c0d37977f",
+      "sha": "b435f07577480531",
       "summary": "\"\"\""
     },
     {
@@ -93,7 +93,7 @@
     },
     {
       "path": "src/mds_client/__init__.py",
-      "sha": "d1ecab4981d7de6f",
+      "sha": "a4d7e9172f7de4f7",
       "summary": "\"\"\""
     },
     {

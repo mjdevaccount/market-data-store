@@ -76,6 +76,10 @@ Below is a snapshot of the repo's structure with logical groupings to help new c
 🗄️ **DB Migrations** → [`/migrations/versions/`](migrations/versions/)
 
 🚀 **Admin Endpoints** → [`/src/datastore/service/app.py`](src/datastore/service/app.py)
+```bash
+# Run FastAPI service (admin endpoints)
+uvicorn datastore.service.app:app --host 0.0.0.0 --port 8000 --factory
+```
 
 📊 **Policies & Aggregates** → [`/src/datastore/timescale_policies.py`](src/datastore/timescale_policies.py), [`/src/datastore/aggregates.py`](src/datastore/aggregates.py)
 
@@ -114,6 +118,27 @@ pip install -r requirements.txt
 
 # For development
 pip install -r requirements-dev.txt
+```
+
+### Testing Quickstart
+```bash
+# Run NDJSON round-trip tests
+pytest -q tests/test_ndjson_roundtrip.py
+```
+
+### Development Commands
+```bash
+# Format and lint code
+make fmt
+make lint
+
+# Run tests
+make test
+
+# Database operations
+make migrate
+make seed
+make policies
 ```
 
 ### Database Setup
@@ -384,6 +409,8 @@ All errors are automatically mapped from `psycopg.errors` exceptions for precise
 
 The library includes a comprehensive CLI for operations and debugging:
 
+> **Exit Codes**: All CLI commands return non-zero exit codes on failure for CI/CD integration.
+
 ```bash
 # Health and connectivity
 mds ping --dsn "postgresql://..." --tenant-id "uuid"
@@ -406,6 +433,7 @@ mds write-news --dsn "..." --tenant-id "uuid" --vendor "reuters" \
 mds write-option --dsn "..." --tenant-id "uuid" --vendor "ibkr" \
   --symbol "AAPL" --expiry "2024-12-20" --option-type "C" --strike 200 \
   --ts "2024-01-01T10:00:00" --iv 0.25 --delta 0.55
+# Note: write-option targets the options_snap table (model: OptionSnap)
 
 # Read operations
 mds latest-prices --dsn "..." --vendor "ibkr" --symbols "AAPL,MSFT"
@@ -497,9 +525,19 @@ export MDS_VALUES_PAGE_SIZE=1000
 export MDS_COPY_MIN_ROWS=5000
 ```
 
+#### Environment Variables Reference
+| Var | Meaning |
+|-----|---------|
+| `MDS_DSN` | PostgreSQL DSN |
+| `MDS_TENANT_ID` | Tenant UUID (RLS) |
+| `MDS_WRITE_MODE` | `auto` \| `executemany` \| `values` \| `copy` |
+| `MDS_VALUES_MIN_ROWS` | Threshold for execute_values |
+| `MDS_COPY_MIN_ROWS` | Threshold for COPY |
+
 #### Performance Characteristics
 - **`executemany`**: Safe default, good for small batches (< 500 rows)
 - **`execute_values`**: Fast for mid-size batches (500-5000 rows), sync only
+  - Install extras: `pip install "psycopg[pool,extras]"`
 - **`COPY`**: Fastest for large batches (5000+ rows), works with RLS and maintains idempotency
 
 ### 💾 Backup & Restore Operations
@@ -660,6 +698,7 @@ mds dump-ndjson-all \
 #          ./fundamentals-AAPL-2024-01-01T00:00:00Z-2024-02-01T00:00:00Z.ndjson.gz
 #          ./news-AAPL-2024-01-01T00:00:00Z-2024-02-01T00:00:00Z.ndjson.gz
 #          ./options_snap-AAPL-2024-01-01T00:00:00Z-2024-02-01T00:00:00Z.ndjson.gz
+# Note: {timeframe} is ignored for tables without that column (fundamentals/news/options)
 
 # Custom template with directory structure
 mds dump-ndjson-all "./exports/{table}/{vendor}-{symbol}-{start}-{end}.ndjson.gz" \
@@ -732,3 +771,11 @@ async with AsyncBatchProcessor(amds, BatchConfig(max_rows=1000, max_ms=5000)) as
 - **Project Config**: [`pyproject.toml`](pyproject.toml) - Full project metadata and build configuration
 
 > **Cursor**: You can regenerate this section automatically whenever the folder structure changes. The `/cursorrules/` directory is your home base for self-bootstrapping rules and automation.
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Contributing
+
+Contributions welcome! Please open an issue or submit a pull request.

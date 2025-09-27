@@ -1,3 +1,4 @@
+import asyncio
 import json
 import typer
 from typing import Optional
@@ -233,3 +234,50 @@ def ingest_ndjson(
 
     bp.close()
     typer.echo(added)
+
+
+@app.command("ingest-ndjson-async")
+def ingest_ndjson_async(
+    dsn: str,
+    tenant_id: str,
+    kind: str = typer.Argument(..., help="one of: bars|fundamentals|news|options"),
+    file: typer.FileText = typer.Argument(..., help="NDJSON file"),
+    max_rows: int = 1000,
+    max_ms: int = 5000,
+    max_bytes: int = 1_048_576,
+):
+    async def _run():
+        from .abatch import AsyncBatchProcessor
+        from .batch import BatchConfig
+        from .aclient import AMDS
+
+        amds = AMDS({"dsn": dsn, "tenant_id": tenant_id, "pool_max": 10})
+        factory = {
+            "bars": Bar,
+            "fundamentals": Fundamentals,
+            "news": News,
+            "options": OptionSnap,
+        }.get(kind.lower())
+        if not factory:
+            raise typer.BadParameter("kind must be one of: bars|fundamentals|news|options")
+
+        count = 0
+        async with AsyncBatchProcessor(
+            amds, BatchConfig(max_rows=max_rows, max_ms=max_ms, max_bytes=max_bytes)
+        ) as bp:
+            for line in file:
+                if not line.strip():
+                    continue
+                obj = factory.model_validate_json(line)
+                if kind.lower() == "bars":
+                    await bp.add_bar(obj)  # type: ignore[arg-type]
+                elif kind.lower() == "fundamentals":
+                    await bp.add_fundamental(obj)  # type: ignore[arg-type]
+                elif kind.lower() == "news":
+                    await bp.add_news(obj)  # type: ignore[arg-type]
+                else:
+                    await bp.add_option(obj)  # type: ignore[arg-type]
+                count += 1
+        typer.echo(count)
+
+    asyncio.run(_run())

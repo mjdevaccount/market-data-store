@@ -27,6 +27,7 @@ from .errors import (
     TimeoutExceeded,
 )
 from .batch import BatchProcessor
+from .abatch import AsyncBatchProcessor
 
 __version__ = "1.0.0"
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     "RLSDenied",
     "TimeoutExceeded",
     "BatchProcessor",
+    "AsyncBatchProcessor",
 ]

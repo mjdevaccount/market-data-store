@@ -47,6 +47,11 @@
       "summary": "from fastapi import FastAPI, Response, status, HTTPException, Depends, Request"
     },
     {
+      "path": "src/mds_client/abatch.py",
+      "sha": "09f316a9bf513191",
+      "summary": "from __future__ import annotations"
+    },
+    {
       "path": "src/mds_client/aclient.py",
       "sha": "887bdef0d5b71389",
       "summary": "from __future__ import annotations"
@@ -58,8 +63,8 @@
     },
     {
       "path": "src/mds_client/cli.py",
-      "sha": "8ceee52bbc13d2f9",
-      "summary": "import json"
+      "sha": "930d940edd511aea",
+      "summary": "import asyncio"
     },
     {
       "path": "src/mds_client/client.py",
@@ -93,7 +98,7 @@
     },
     {
       "path": "src/mds_client/__init__.py",
-      "sha": "a4d7e9172f7de4f7",
+      "sha": "65fcacfd14b2bae6",
       "summary": "\"\"\""
     },
     {

@@ -97,18 +97,43 @@ uvicorn datastore.service.app:app --host 0.0.0.0 --port 8000 --factory
 
 ⚙️ **Project Config** → [`pyproject.toml`](pyproject.toml)
 
+## 📋 Releases
+
+### 🏷️ Current Release: [v0.1.0](https://github.com/mjdevaccount/market-data-store/releases/tag/v0.1.0)
+
+**What's included:**
+- ✅ Complete `mds_client` library with sync/async APIs
+- ✅ Production-ready batch processing and backup/restore
+- ✅ Comprehensive CLI with all operational commands
+- ✅ Full documentation and troubleshooting guides
+- ✅ RLS security and tenant isolation
+
+### 📦 Installation from Release
+```bash
+# Install specific version
+pip install git+https://github.com/mjdevaccount/market-data-store.git@v0.1.0#subdirectory=src
+
+# Install latest version
+pip install git+https://github.com/mjdevaccount/market-data-store.git#subdirectory=src
+```
+
 ## 🚀 Quick Start
 
-### Prerequisites
-- Python 3.11+
-- PostgreSQL 13+ with **TimescaleDB extension** (required)
-- Virtual environment
+### 📦 Installation
 
-### Installation
+#### Option 1: Install from Git (Recommended)
+```bash
+# Install the mds_client library directly from this repository
+pip install git+https://github.com/mjdevaccount/market-data-store.git@v0.1.0#subdirectory=src
 
+# Or install the latest version
+pip install git+https://github.com/mjdevaccount/market-data-store.git#subdirectory=src
+```
+
+#### Option 2: Development Setup
 ```powershell
-# Clone and setup
-git clone <repository>
+# Clone and setup for development
+git clone https://github.com/mjdevaccount/market-data-store.git
 cd market-data-store
 
 # Create and activate virtual environment
@@ -120,6 +145,52 @@ pip install -r requirements.txt
 
 # For development
 pip install -r requirements-dev.txt
+```
+
+### Prerequisites
+- Python 3.11+
+- PostgreSQL 13+ with **TimescaleDB extension** (required)
+- Virtual environment
+
+### 🎯 Using the Released Package
+
+Once installed, you can use the `mds_client` library in your projects:
+
+```python
+# Basic usage
+from mds_client import MDS, Bar
+from datetime import datetime, timezone
+
+# Configure client
+mds = MDS({
+    "dsn": "postgresql://user:pass@host:port/db",
+    "tenant_id": "your-tenant-uuid"
+})
+
+# Write market data
+bar = Bar(
+    tenant_id="your-tenant-uuid",
+    vendor="ibkr",
+    symbol="AAPL",
+    timeframe="1m",
+    ts=datetime.now(timezone.utc),
+    close_price=150.5,
+    volume=1000
+)
+
+mds.upsert_bars([bar])
+```
+
+```bash
+# Use the CLI
+export MDS_DSN="postgresql://user:pass@host:port/db"
+export MDS_TENANT_ID="your-tenant-uuid"
+
+# Test connection
+mds ping
+
+# Write data
+mds write-bar --vendor ibkr --symbol AAPL --timeframe 1m --ts "2024-01-01T10:00:00Z" --close-price 150.5 --volume 1000
 ```
 
 ### Testing Quickstart

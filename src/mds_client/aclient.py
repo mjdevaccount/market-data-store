@@ -133,6 +133,7 @@ class AMDS:
             conninfo=self.cfg["dsn"],
             max_size=self.cfg["pool_max"],
             kwargs={"autocommit": False},
+            open=self._prepare_async_conn,  # runs once per connection
         )
         self.tenant_id = self.cfg.get("tenant_id")
         self.statement_timeout_ms = self.cfg.get("statement_timeout_ms")
@@ -141,22 +142,18 @@ class AMDS:
     async def aclose(self) -> None:
         await self.pool.close()
 
+    async def _prepare_async_conn(self, conn):
+        """Prepare connection with tenant, app name, and timeouts."""
+        if self.tenant_id:
+            await conn.execute("SET app.tenant_id = %s", (self.tenant_id,))
+        if self.app_name:
+            await conn.execute("SET application_name = %s", (self.app_name,))
+        if self.statement_timeout_ms:
+            await conn.execute("SET statement_timeout = %s", (self.statement_timeout_ms,))
+
     async def _conn(self):
+        """Get connection with pre-configured tenant, app name, and timeouts."""
         async with self.pool.connection() as conn:
-            if self.app_name:
-                await conn.execute(
-                    psql.SQL("SET application_name = {}").format(psql.Literal(self.app_name))
-                )
-            if self.statement_timeout_ms:
-                await conn.execute(
-                    psql.SQL("SET statement_timeout = {}").format(
-                        psql.Literal(int(self.statement_timeout_ms))
-                    )
-                )
-            if self.tenant_id:
-                await conn.execute(
-                    psql.SQL("SET LOCAL app.tenant_id = {}").format(psql.Literal(self.tenant_id))
-                )
             yield conn
 
     # ---------- health / meta ----------

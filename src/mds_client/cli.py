@@ -506,7 +506,7 @@ def dump_ndjson_async(
                 end=end,
             )
             _ensure_parent(out_path)
-            nbytes = await amds.copy_out_ndjson(select_sql=sel, out_path=str(out_path))
+            nbytes = await amds.copy_out_ndjson_async(select_sql=sel, out_path=str(out_path))
             typer.echo(f"Wrote {nbytes} bytes → {out_path}")
         finally:
             await amds.aclose()
@@ -617,7 +617,7 @@ def dump_ndjson_async_all(
                 )
                 out_path = Path(out_name)
                 _ensure_parent(out_path)
-                nbytes = await amds.copy_out_ndjson(select_sql=sel, out_path=str(out_path))
+                nbytes = await amds.copy_out_ndjson_async(select_sql=sel, out_path=str(out_path))
                 typer.echo(f"[{table}] wrote {nbytes} bytes → {out_path}")
         finally:
             await amds.aclose()

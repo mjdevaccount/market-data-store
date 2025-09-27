@@ -1,13 +1,15 @@
-# market-data-store
+# 🚀 market-data-store
+
+> **High-performance market data infrastructure** with TimescaleDB, RLS, and production-ready client library
 
 **Control-plane** for the market data database with **client library** for Market Data Core:
 
-- **Migrations & policies** (TimescaleDB)
-- **Admin endpoints**: health, readiness, schema/version, migrate, retention/compression, backfills, aggregates
-- **Prometheus** metrics
-- **`mds_client` library**: Production-ready Python client for Market Data Core with sync/async APIs, RLS, and tenant isolation
+- 🗄️ **Migrations & policies** (TimescaleDB)
+- 🔧 **Admin endpoints**: health, readiness, schema/version, migrate, retention/compression, backfills, aggregates
+- 📊 **Prometheus** metrics
+- 🐍 **`mds_client` library**: Production-ready Python client for Market Data Core with sync/async APIs, RLS, and tenant isolation
 
-> The `mds_client` library provides direct in-process access for Market Data Core. No HTTP latency - Core imports and uses the library directly with connection pooling, RLS, and TimescaleDB integration.
+> 💡 The `mds_client` library provides direct in-process access for Market Data Core. No HTTP latency - Core imports and uses the library directly with connection pooling, RLS, and TimescaleDB integration.
 
 ## 📂 Project Layout & Description
 

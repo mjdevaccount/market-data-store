@@ -172,7 +172,7 @@ async def main():
         "tenant_id": "uuid-here",
         "pool_max": 10
     })
-    
+
     # Batch processing
     config = BatchConfig(max_rows=1000, max_ms=5000, max_bytes=1048576)
     async with AsyncBatchProcessor(amds, config) as bp:
@@ -180,7 +180,7 @@ async def main():
         for data in large_dataset:
             await bp.add_bar(data)
         # Auto-flush on exit
-    
+
     await amds.aclose()
 
 asyncio.run(main())

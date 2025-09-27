@@ -58,7 +58,7 @@
     },
     {
       "path": "src/mds_client/cli.py",
-      "sha": "97a7bc7d74b3b9e4",
+      "sha": "696a559d088a7b50",
       "summary": "from __future__ import annotations"
     },
     {

@@ -12,6 +12,7 @@ from .models import Bar, Fundamentals, News, OptionSnap
 from .utils import iter_ndjson, coerce_model
 from .client import TABLE_PRESETS
 from psycopg import sql as psql
+import sys
 
 app = typer.Typer(help="mds_client operational CLI")
 
@@ -388,6 +389,115 @@ def restore(
         src_path=src_path,
     )
     typer.echo(f"upserted {n} rows")
+
+
+# ---------------------------
+# NDJSON dump helpers
+# ---------------------------
+
+
+def _build_ndjson_select(
+    table: str,
+    cols: list[str],
+    vendor: str | None,
+    symbol: str | None,
+    timeframe: str | None,
+    start: str | None,
+    end: str | None,
+) -> psql.Composed:
+    parts: list[psql.Composed] = [
+        psql.SQL("SELECT {} FROM {}").format(
+            psql.SQL(", ").join(psql.Identifier(c) for c in cols),
+            psql.Identifier(table),
+        )
+    ]
+    wh: list[psql.Composed] = []
+    if vendor:
+        wh.append(psql.SQL("vendor = {}").format(psql.Literal(vendor)))
+    if symbol and "symbol" in cols:
+        wh.append(psql.SQL("symbol = {}").format(psql.Literal(symbol.upper())))
+    if timeframe and "timeframe" in cols:
+        wh.append(psql.SQL("timeframe = {}").format(psql.Literal(timeframe)))
+
+    # time column per table
+    tcol = "ts" if "ts" in cols else ("asof" if "asof" in cols else "published_at")
+    if start:
+        wh.append(psql.SQL("{} >= {}").format(psql.Identifier(tcol), psql.Literal(start)))
+    if end:
+        wh.append(psql.SQL("{} < {}").format(psql.Identifier(tcol), psql.Literal(end)))
+
+    if wh:
+        parts.append(psql.SQL("WHERE ") + psql.SQL(" AND ").join(wh))
+    parts.append(psql.SQL("ORDER BY {}").format(psql.Identifier(tcol)))
+    return psql.SQL(" ").join(parts)
+
+
+@app.command("dump-ndjson")
+def dump_ndjson(
+    table: str = typer.Argument(..., help="bars|fundamentals|news|options_snap"),
+    out_path: str = typer.Argument(
+        ..., help="Output file (.ndjson or .ndjson.gz) or '-' for stdout"
+    ),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
+    vendor: str = typer.Option(None, "--vendor", help="Filter by vendor"),
+    symbol: str = typer.Option(None, "--symbol", help="Filter by symbol"),
+    timeframe: str = typer.Option(None, "--timeframe", help="Filter by timeframe"),
+    start: str = typer.Option(None, "--start", help="ISO start (inclusive)"),
+    end: str = typer.Option(None, "--end", help="ISO end (exclusive)"),
+):
+    """
+    Stream NDJSON (one JSON object per line) for the selected rows.
+    Round-trips with `mds ingest-ndjson`.
+    """
+    if table not in TABLE_PRESETS:
+        raise typer.BadParameter(f"table must be one of: {', '.join(TABLE_PRESETS.keys())}")
+
+    presets = TABLE_PRESETS[table]  # reuse same column set used by ingest
+    sel = _build_ndjson_select(table, presets["cols"], vendor, symbol, timeframe, start, end)
+
+    mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
+    if out_path == "-":
+        bytes_written = mds.copy_out_ndjson(select_sql=sel, out=sys.stdout.buffer)
+    else:
+        bytes_written = mds.copy_out_ndjson(select_sql=sel, out_path=out_path)
+    typer.echo(f"wrote {bytes_written} bytes")
+
+
+@app.command("dump-ndjson-async")
+def dump_ndjson_async(
+    table: str = typer.Argument(..., help="bars|fundamentals|news|options_snap"),
+    out_path: str = typer.Argument(
+        ..., help="Output file (.ndjson or .ndjson.gz) or '-' for stdout"
+    ),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
+    vendor: str = typer.Option(None, "--vendor", help="Filter by vendor"),
+    symbol: str = typer.Option(None, "--symbol", help="Filter by symbol"),
+    timeframe: str = typer.Option(None, "--timeframe", help="Filter by timeframe"),
+    start: str = typer.Option(None, "--start", help="ISO start (inclusive)"),
+    end: str = typer.Option(None, "--end", help="ISO end (exclusive)"),
+):
+    """
+    Async NDJSON dump (uses AMDS). Good for very large exports where you want async I/O.
+    """
+    import asyncio
+
+    if table not in TABLE_PRESETS:
+        raise typer.BadParameter(f"table must be one of: {', '.join(TABLE_PRESETS.keys())}")
+
+    presets = TABLE_PRESETS[table]
+    sel = _build_ndjson_select(table, presets["cols"], vendor, symbol, timeframe, start, end)
+
+    async def _run():
+        amds = AMDS({"dsn": dsn, "tenant_id": tenant_id})
+        if out_path == "-":
+            bytes_written = await amds.copy_out_ndjson(select_sql=sel, out=sys.stdout.buffer)
+        else:
+            bytes_written = await amds.copy_out_ndjson(select_sql=sel, out_path=out_path)
+        typer.echo(f"wrote {bytes_written} bytes")
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":

@@ -611,6 +611,50 @@ class MDS:
             cur.execute(insert_sql)
             return cur.rowcount
 
+    def copy_out_ndjson(
+        self,
+        *,
+        select_sql: psql.Composed,
+        out: BinaryIO | None = None,
+        out_path: str | None = None,
+        gzip_level: int = 6,
+    ) -> int:
+        """
+        Stream NDJSON using COPY (SELECT to_jsonb(t) FROM (<select_sql>) t) TO STDOUT.
+        Each row is a single JSON object per line. Returns total bytes written.
+        RLS is enforced by the connection's tenant context.
+        """
+        if (out is None) == (out_path is None):
+            raise ValueError("Provide exactly one of `out` or `out_path`")
+
+        total = 0
+        with self._conn() as conn, conn.cursor() as cur:
+            # Wrap the caller's SELECT as a derived table 't' and jsonify it row-by-row
+            copy_sql = psql.SQL("COPY (SELECT to_jsonb(t) FROM ({}) t) TO STDOUT").format(
+                select_sql
+            )
+
+            sink = out
+            if out_path is not None:
+                sink = (
+                    gzip.open(out_path, "wb", gzip_level)
+                    if out_path.endswith(".gz")
+                    else open(out_path, "wb")
+                )
+
+            try:
+                with cur.copy(copy_sql) as cp:
+                    while True:
+                        chunk = cp.read()
+                        if not chunk:
+                            break
+                        sink.write(chunk)
+                        total += len(chunk)
+            finally:
+                if out_path is not None and sink is not None:
+                    sink.close()
+        return total
+
 
 # Convenience: table presets (so CLI can call by name)
 TABLE_PRESETS: dict[str, dict[str, list[str]]] = {

@@ -438,6 +438,17 @@ mds dump bars ./bars_export.csv.gz \
 # Restore/Import operations (idempotent upserts)
 mds restore bars ./bars_export.csv.gz \
   --dsn "postgresql://..." --tenant-id "uuid"
+
+# NDJSON dump operations (round-trip with ingest-ndjson)
+mds dump-ndjson bars ./bars_export.ndjson.gz \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --vendor "ibkr" --symbol "AAPL" --timeframe "1m" \
+  --start "2024-01-01T00:00:00Z" --end "2024-02-01T00:00:00Z"
+
+# Async NDJSON dump for large exports
+mds dump-ndjson-async bars ./bars_export.ndjson.gz \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --vendor "ibkr" --symbol "AAPL"
 ```
 
 ### ⚡ Performance Optimization
@@ -545,6 +556,62 @@ mds restore bars ./bars_export.csv.gz \
 - **CSV with Headers**: Self-describing format for easy inspection
 - **Streaming**: Memory-efficient for large datasets
 
+### 📄 NDJSON Export Operations
+
+The library provides NDJSON export functionality that perfectly round-trips with the existing ingest commands:
+
+#### Export Operations (JSON Streaming)
+```python
+from mds_client import MDS
+from psycopg import sql as psql
+
+mds = MDS({"dsn": "...", "tenant_id": "uuid"})
+
+# Export bars as NDJSON
+sel = psql.SQL("""
+    SELECT {cols}
+    FROM bars
+    WHERE vendor = {v} AND symbol = {s} AND timeframe = '1m'
+      AND ts >= {start} AND ts < {end}
+    ORDER BY ts
+""").format(
+    cols=psql.SQL(", ").join(psql.Identifier(c) for c in mds.TABLE_PRESETS["bars"]["cols"]),
+    v=psql.Literal("ibkr"),
+    s=psql.Literal("AAPL"),
+    start=psql.Literal("2024-01-01T00:00:00Z"),
+    end=psql.Literal("2024-02-01T00:00:00Z"),
+)
+
+# Export to gzipped NDJSON
+mds.copy_out_ndjson(select_sql=sel, out_path="bars_aapl_2024-01.ndjson.gz")
+```
+
+#### CLI Operations
+```bash
+# Sync NDJSON export
+mds dump-ndjson bars ./bars_export.ndjson.gz \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --vendor "ibkr" --symbol "AAPL" --timeframe "1m" \
+  --start "2024-01-01T00:00:00Z" --end "2024-02-01T00:00:00Z"
+
+# Async NDJSON export for large datasets
+mds dump-ndjson-async bars ./bars_export.ndjson.gz \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --vendor "ibkr" --symbol "AAPL"
+
+# Round-trip: export then import
+mds dump-ndjson bars ./bars.ndjson --dsn "..." --tenant-id "uuid"
+mds ingest-ndjson bars ./bars.ndjson --dsn "..." --tenant-id "uuid"
+```
+
+#### Key Features
+- **Round-trip compatibility**: Perfect compatibility with `ingest-ndjson` commands
+- **JSON streaming**: Uses `to_jsonb()` for efficient PostgreSQL JSON serialization
+- **RLS enforcement**: All operations respect tenant isolation
+- **Gzip support**: Automatic compression for `.ndjson.gz` files
+- **Async support**: High-performance async exports for large datasets
+- **ISO timestamps**: Timestamps serialized in ISO-8601 format for clean parsing
+
 ### 🔄 Batch Processing
 
 For high-throughput scenarios, the library supports both sync and async batch processing:
@@ -586,6 +653,7 @@ async with AsyncBatchProcessor(amds, BatchConfig(max_rows=1000, max_ms=5000)) as
 - **NDJSON Support**: Gzip compression, stdin input, and model coercion
 - **Job Outbox**: Idempotent job enqueueing with conflict-free guarantees
 - **Backup/Restore**: Tenant-aware CSV export/import with RLS enforcement and idempotent upserts
+- **NDJSON Export**: Round-trip compatible JSON dumps with `to_jsonb()` streaming
 
 ### Dependencies
 

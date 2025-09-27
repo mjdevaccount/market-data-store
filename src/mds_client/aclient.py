@@ -555,3 +555,53 @@ class AMDS:
             raise
         finally:
             await self._put_conn_ok(conn)
+
+    async def copy_out_ndjson(
+        self,
+        *,
+        select_sql: psql.Composed,
+        out: BinaryIO | None = None,
+        out_path: str | None = None,
+        gzip_level: int = 6,
+    ) -> int:
+        """
+        Async NDJSON stream via COPY (SELECT to_jsonb(t) FROM (<select_sql>) t) TO STDOUT.
+        Returns total bytes written.
+        """
+        if (out is None) == (out_path is None):
+            raise ValueError("Provide exactly one of `out` or `out_path`")
+
+        total = 0
+        conn = await self._get_conn()
+        try:
+            async with conn.cursor() as cur:
+                copy_sql = psql.SQL("COPY (SELECT to_jsonb(t) FROM ({}) t) TO STDOUT").format(
+                    select_sql
+                )
+
+                sink = out
+                if out_path is not None:
+                    sink = (
+                        gzip.open(out_path, "wb", gzip_level)
+                        if out_path.endswith(".gz")
+                        else open(out_path, "wb")
+                    )
+
+                try:
+                    async with cur.copy(copy_sql) as cp:
+                        while True:
+                            chunk = await cp.read()
+                            if not chunk:
+                                break
+                            sink.write(chunk)
+                            total += len(chunk)
+                finally:
+                    if out_path is not None and sink is not None:
+                        sink.close()
+            await conn.commit()
+            return total
+        except Exception:
+            await conn.rollback()
+            raise
+        finally:
+            await self._put_conn_ok(conn)

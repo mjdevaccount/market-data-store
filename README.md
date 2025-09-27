@@ -383,27 +383,37 @@ mds latest-prices --dsn "..." --vendor "ibkr" --symbols "AAPL,MSFT"
 mds enqueue-job --dsn "..." --tenant-id "uuid" \
   --idempotency-key "job-123" --job-type "backfill" \
   --payload '{"symbol": "AAPL", "start": "2024-01-01"}' --priority "high"
+
+# Async NDJSON ingest (uses AMDS + AsyncBatchProcessor)
+mds ingest-ndjson-async bars ./bars.ndjson \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --max-rows 2000 --max-ms 3000
 ```
 
 ### 🔄 Batch Processing
 
-For high-throughput scenarios, the library supports batch processing:
+For high-throughput scenarios, the library supports both sync and async batch processing:
 
+#### Sync Batch Processing
 ```python
-from mds_client import BatchProcessor
+from mds_client import MDS, BatchProcessor, BatchConfig, Bar
 
-# Configure batch processing
-batch_config = {
-    "max_rows": 1000,      # Flush after 1000 rows
-    "max_ms": 5000,        # Or flush after 5 seconds
-    "max_bytes": 1024*1024  # Or flush after 1MB
-}
+mds = MDS({"dsn": "...", "tenant_id": "..."})
+bp = BatchProcessor(mds, BatchConfig(max_rows=1000, max_ms=5000))
+for bar in big_set:
+    bp.add_bar(bar)
+bp.flush()
+```
 
-# Process large datasets efficiently
-processor = BatchProcessor(mds, batch_config)
-for bar in large_bar_dataset:
-    processor.add_bar(bar)
-    # Automatically flushes based on size/time thresholds
+#### Async Batch Processing
+```python
+from mds_client import AMDS, AsyncBatchProcessor, BatchConfig, Bar
+
+amds = AMDS({"dsn": "...", "tenant_id": "...", "pool_max": 10})
+async with AsyncBatchProcessor(amds, BatchConfig(max_rows=1000, max_ms=5000)) as bp:
+    for bar in big_set:
+        await bp.add_bar(bar)
+# Auto-flush on context exit
 ```
 
 ### Key Features

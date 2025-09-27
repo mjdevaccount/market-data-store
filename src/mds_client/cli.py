@@ -1,35 +1,44 @@
 import asyncio
-import json
 import typer
-from typing import Optional
 from datetime import datetime, date
+from typing import Optional
 
 from .client import MDS
+from .aclient import AMDS
+from .batch import BatchConfig
+from .abatch import AsyncBatchProcessor
 from .models import Bar, Fundamentals, News, OptionSnap
 
-app = typer.Typer(help="MDS operational CLI")
+app = typer.Typer(help="Market Data Store operational CLI")
+
+# ---------- helpers
 
 
-def _mds(dsn: str, tenant_id: Optional[str]) -> MDS:
-    return MDS({"dsn": dsn, "tenant_id": tenant_id, "pool_max": 2})
+def _mk_mds(dsn: str, tenant_id: Optional[str]) -> MDS:
+    return MDS({"dsn": dsn, "tenant_id": tenant_id})
 
 
-# ------------------------- health/meta
+def _mk_amds(dsn: str, tenant_id: Optional[str]) -> AMDS:
+    return AMDS({"dsn": dsn, "tenant_id": tenant_id, "pool_max": 10})
 
 
-@app.command()
+# ---------- health/schema
+
+
+@app.command("ping")
 def ping(dsn: str, tenant_id: Optional[str] = None):
-    ok = _mds(dsn, tenant_id).health()
-    typer.echo("ok" if ok else "fail")
+    mds = _mk_mds(dsn, tenant_id)
+    ok = mds.health()
+    typer.echo("ok" if ok else "not-ok")
 
 
 @app.command("schema-version")
-def schema_version(dsn: str, tenant_id: Optional[str] = None):
-    v = _mds(dsn, tenant_id).schema_version()
-    typer.echo(v or "unknown")
+def schema_version(dsn: str):
+    mds = _mk_mds(dsn, None)
+    typer.echo(mds.schema_version())
 
 
-# ------------------------- writes (single-row convenience)
+# ---------- writes (single-row convenience)
 
 
 @app.command("write-bar")
@@ -46,6 +55,7 @@ def write_bar(
     close_price: Optional[float] = None,
     volume: Optional[int] = None,
 ):
+    mds = _mk_mds(dsn, tenant_id)
     row = Bar(
         tenant_id=tenant_id,
         vendor=vendor,
@@ -58,7 +68,7 @@ def write_bar(
         close_price=close_price,
         volume=volume,
     )
-    n = _mds(dsn, tenant_id).upsert_bars([row])
+    n = mds.upsert_bars([row])
     typer.echo(n)
 
 
@@ -74,6 +84,7 @@ def write_fundamental(
     net_income: Optional[float] = None,
     eps: Optional[float] = None,
 ):
+    mds = _mk_mds(dsn, tenant_id)
     row = Fundamentals(
         tenant_id=tenant_id,
         vendor=vendor,
@@ -84,7 +95,7 @@ def write_fundamental(
         net_income=net_income,
         eps=eps,
     )
-    n = _mds(dsn, tenant_id).upsert_fundamentals([row])
+    n = mds.upsert_fundamentals([row])
     typer.echo(n)
 
 
@@ -93,24 +104,23 @@ def write_news(
     dsn: str,
     tenant_id: str,
     vendor: str,
-    published_at: datetime,
     title: str,
+    published_at: datetime,
     symbol: Optional[str] = None,
     url: Optional[str] = None,
     sentiment_score: Optional[float] = None,
-    id: Optional[str] = None,
 ):
+    mds = _mk_mds(dsn, tenant_id)
     row = News(
         tenant_id=tenant_id,
         vendor=vendor,
-        published_at=published_at,
         title=title,
+        published_at=published_at,
         symbol=symbol,
         url=url,
         sentiment_score=sentiment_score,
-        id=id,
     )
-    n = _mds(dsn, tenant_id).upsert_news([row])
+    n = mds.upsert_news([row])
     typer.echo(n)
 
 
@@ -131,6 +141,7 @@ def write_option(
     volume: Optional[int] = None,
     spot: Optional[float] = None,
 ):
+    mds = _mk_mds(dsn, tenant_id)
     expiry_date = date.fromisoformat(expiry)
     row = OptionSnap(
         tenant_id=tenant_id,
@@ -147,93 +158,11 @@ def write_option(
         volume=volume,
         spot=spot,
     )
-    n = _mds(dsn, tenant_id).upsert_options([row])
+    n = mds.upsert_options([row])
     typer.echo(n)
 
 
-# ------------------------- reads
-
-
-@app.command("latest-prices")
-def latest_prices(
-    dsn: str,
-    vendor: str,
-    symbols: str,
-    tenant_id: Optional[str] = None,
-):
-    syms = [s.strip().upper() for s in symbols.split(",") if s.strip()]
-    res = _mds(dsn, tenant_id).latest_prices(syms, vendor)
-    typer.echo(json.dumps([r.model_dump() for r in res], default=str))
-
-
-# ------------------------- jobs
-
-
-@app.command("enqueue-job")
-def enqueue_job(
-    dsn: str,
-    tenant_id: str,
-    idempotency_key: str,
-    job_type: str,
-    payload: str,
-    priority: str = "medium",
-):
-    mds = _mds(dsn, tenant_id)
-    job_id = mds.enqueue_job(
-        tenant_id=tenant_id,
-        idempotency_key=idempotency_key,
-        job_type=job_type,
-        payload=json.loads(payload),
-        priority=priority,
-    )
-    typer.echo(job_id or "")
-
-
-# ------------------------- batch ingest
-
-
-@app.command("ingest-ndjson")
-def ingest_ndjson(
-    dsn: str,
-    tenant_id: str,
-    kind: str = typer.Argument(..., help="one of: bars|fundamentals|news|options"),
-    file: typer.FileText = typer.Argument(..., help="path to NDJSON file with records"),
-    max_rows: int = 1000,
-    max_ms: int = 5000,
-    max_bytes: int = 1_048_576,
-):
-    from .batch import BatchProcessor, BatchConfig
-
-    bp = BatchProcessor(
-        _mds(dsn, tenant_id), BatchConfig(max_rows=max_rows, max_ms=max_ms, max_bytes=max_bytes)
-    )
-
-    factory = {
-        "bars": Bar,
-        "fundamentals": Fundamentals,
-        "news": News,
-        "options": OptionSnap,
-    }.get(kind.lower())
-    if not factory:
-        raise typer.BadParameter("kind must be one of: bars|fundamentals|news|options")
-
-    added = 0
-    for line in file:
-        if not line.strip():
-            continue
-        obj = factory.model_validate_json(line)
-        if factory is Bar:
-            bp.add_bar(obj)  # type: ignore[arg-type]
-        elif factory is Fundamentals:
-            bp.add_fundamental(obj)  # type: ignore[arg-type]
-        elif factory is News:
-            bp.add_news(obj)  # type: ignore[arg-type]
-        else:
-            bp.add_option(obj)  # type: ignore[arg-type]
-        added += 1
-
-    bp.close()
-    typer.echo(added)
+# ---------- async NDJSON ingest (bars|fundamentals|news|options)
 
 
 @app.command("ingest-ndjson-async")
@@ -241,43 +170,43 @@ def ingest_ndjson_async(
     dsn: str,
     tenant_id: str,
     kind: str = typer.Argument(..., help="one of: bars|fundamentals|news|options"),
-    file: typer.FileText = typer.Argument(..., help="NDJSON file"),
+    path: str = typer.Argument(..., help="NDJSON file path"),
     max_rows: int = 1000,
     max_ms: int = 5000,
     max_bytes: int = 1_048_576,
 ):
     async def _run():
-        from .abatch import AsyncBatchProcessor
-        from .batch import BatchConfig
-        from .aclient import AMDS
-
-        amds = AMDS({"dsn": dsn, "tenant_id": tenant_id, "pool_max": 10})
-        factory = {
+        amds = _mk_amds(dsn, tenant_id)
+        factory_map = {
             "bars": Bar,
             "fundamentals": Fundamentals,
             "news": News,
             "options": OptionSnap,
-        }.get(kind.lower())
+        }
+        factory = factory_map.get(kind.lower())
         if not factory:
             raise typer.BadParameter("kind must be one of: bars|fundamentals|news|options")
 
         count = 0
-        async with AsyncBatchProcessor(
-            amds, BatchConfig(max_rows=max_rows, max_ms=max_ms, max_bytes=max_bytes)
-        ) as bp:
-            for line in file:
-                if not line.strip():
-                    continue
-                obj = factory.model_validate_json(line)
-                if kind.lower() == "bars":
-                    await bp.add_bar(obj)  # type: ignore[arg-type]
-                elif kind.lower() == "fundamentals":
-                    await bp.add_fundamental(obj)  # type: ignore[arg-type]
-                elif kind.lower() == "news":
-                    await bp.add_news(obj)  # type: ignore[arg-type]
-                else:
-                    await bp.add_option(obj)  # type: ignore[arg-type]
-                count += 1
+        cfg = BatchConfig(max_rows=max_rows, max_ms=max_ms, max_bytes=max_bytes)
+        async with AsyncBatchProcessor(amds, cfg) as bp:
+            with open(path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    obj = factory.model_validate_json(line)
+
+                    if kind == "bars":
+                        await bp.add_bar(obj)  # type: ignore[arg-type]
+                    elif kind == "fundamentals":
+                        await bp.add_fundamental(obj)  # type: ignore[arg-type]
+                    elif kind == "news":
+                        await bp.add_news(obj)  # type: ignore[arg-type]
+                    else:
+                        await bp.add_option(obj)  # type: ignore[arg-type]
+                    count += 1
+
         typer.echo(count)
 
     asyncio.run(_run())

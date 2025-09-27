@@ -18,32 +18,21 @@ Usage:
 
 from .client import MDS, MDSConfig
 from .aclient import AMDS
-from .models import Bar, Fundamentals, News, OptionSnap, LatestPrice
-from .errors import (
-    MDSOperationalError,
-    RetryableError,
-    ConstraintViolation,
-    RLSDenied,
-    TimeoutExceeded,
-)
-from .batch import BatchProcessor
+from .batch import BatchProcessor, BatchConfig
 from .abatch import AsyncBatchProcessor
+from .models import Bar, Fundamentals, News, OptionSnap, LatestPrice
 
 __version__ = "1.0.0"
 __all__ = [
     "MDS",
     "AMDS",
     "MDSConfig",
+    "BatchProcessor",
+    "AsyncBatchProcessor",
+    "BatchConfig",
     "Bar",
     "Fundamentals",
     "News",
     "OptionSnap",
     "LatestPrice",
-    "MDSOperationalError",
-    "RetryableError",
-    "ConstraintViolation",
-    "RLSDenied",
-    "TimeoutExceeded",
-    "BatchProcessor",
-    "AsyncBatchProcessor",
 ]

@@ -17,6 +17,17 @@ COMPRESSION_POLICIES = [
     ("news", "30 days"),
 ]
 
+# before enabling compression, bail if any RLS is enabled on the table
+RLS_CHECK = """
+SELECT EXISTS (
+  SELECT 1
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  JOIN pg_catalog.pg_policies p ON p.schemaname = n.nspname AND p.tablename = c.relname
+  WHERE n.nspname='public' AND c.relname = %s
+);
+"""
+
 
 def _timescale_available(engine: Engine) -> bool:
     with engine.connect() as conn:
@@ -43,18 +54,11 @@ def apply_compression(engine: Engine) -> None:
         return
     with engine.begin() as conn:
         for table, interval in COMPRESSION_POLICIES:
-            # Check if RLS is enabled on the table
-            rls_check = conn.execute(
-                text("SELECT relrowsecurity FROM pg_class WHERE relname = :t").bindparams(t=table)
-            ).scalar()
-
-            if rls_check:
-                logger.warning(
-                    f"Skipping compression on {table} - RLS is enabled (compression incompatible with RLS)"
-                )
+            rls_exists = conn.execute(text(RLS_CHECK), (table,)).scalar()
+            if rls_exists:
+                # log and skip
+                logger.warning(f"Skipping compression on {table} (RLS enabled).")
                 continue
-
-            logger.info(f"Enabling compression and adding policy on {table} ({interval})")
             conn.execute(text(f"ALTER TABLE {table} SET (timescaledb.compress);"))
             conn.execute(
                 text("SELECT add_compression_policy(:t, INTERVAL :ival)").bindparams(

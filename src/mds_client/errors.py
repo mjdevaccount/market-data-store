@@ -4,6 +4,8 @@ Custom exceptions for Market Data Store Client.
 Provides structured error handling with retry logic and observability.
 """
 
+from psycopg import errors as pgerr
+
 
 class MDSOperationalError(Exception):
     """Base operational error for MDS client."""
@@ -35,16 +37,17 @@ class TimeoutExceeded(MDSOperationalError):
     pass
 
 
-def map_db_error(e: Exception) -> MDSOperationalError:
-    import psycopg
-    import psycopg.errors as E
-
-    if isinstance(e, (E.SerializationFailure, E.DeadlockDetected, psycopg.OperationalError)):
+def map_db_error(e: Exception) -> Exception:
+    # retryable
+    if isinstance(e, (pgerr.DeadlockDetected, pgerr.SerializationFailure, pgerr.AdminShutdown)):
         return RetryableError(str(e))
-    if isinstance(e, (E.UniqueViolation, E.CheckViolation, E.ForeignKeyViolation)):
-        return ConstraintViolation(str(e))
-    if "row level security" in str(e).lower() or "app.tenant_id" in str(e):
+    # rls
+    if isinstance(e, pgerr.InsufficientPrivilege):
         return RLSDenied(str(e))
-    if isinstance(e, E.QueryCanceled):
+    # timeouts
+    if isinstance(e, pgerr.QueryCanceled):
         return TimeoutExceeded(str(e))
+    # uniques / FK
+    if isinstance(e, (pgerr.UniqueViolation, pgerr.ForeignKeyViolation, pgerr.CheckViolation)):
+        return ConstraintViolation(str(e))
     return MDSOperationalError(str(e))

@@ -1,0 +1,263 @@
+# Market Data Store Operations Cheat Sheet
+
+## Overview
+The `market-data-store` package provides a comprehensive CLI and Python library for market data persistence, with TimescaleDB integration, RLS (Row Level Security), and tenant isolation.
+
+## CLI Commands (`mds` command)
+
+### Health & Schema Operations
+```bash
+# Check database connectivity and health
+mds ping --dsn "postgresql://..." --tenant-id "uuid"
+
+# Get current schema version
+mds schema-version --dsn "postgresql://..." --tenant-id "uuid"
+
+# Get latest prices for symbols
+mds latest-prices "AAPL,MSFT,GOOGL" --vendor "ibkr" --dsn "postgresql://..." --tenant-id "uuid"
+```
+
+### Write Operations (Individual Records)
+```bash
+# Write a single bar/candlestick
+mds write-bar --symbol "AAPL" --timeframe "1d" --ts "2024-01-15T00:00:00" \
+  --open-price 150.0 --high-price 155.0 --low-price 148.0 --close-price 152.0 \
+  --volume 1000000 --vendor "ibkr" --dsn "postgresql://..." --tenant-id "uuid"
+
+# Write fundamental data
+mds write-fundamental --symbol "AAPL" --asof "2024-01-15" \
+  --total-assets 1000000000 --net-income 50000000 --eps 3.25 \
+  --vendor "ibkr" --dsn "postgresql://..." --tenant-id "uuid"
+
+# Write news article
+mds write-news --title "Apple Reports Strong Q4 Earnings" \
+  --published-at "2024-01-15T10:30:00" --symbol "AAPL" \
+  --url "https://example.com/news" --sentiment-score 0.8 \
+  --vendor "reuters" --dsn "postgresql://..." --tenant-id "uuid"
+
+# Write options data
+mds write-option --symbol "AAPL" --expiry "2024-03-15" --option-type "C" \
+  --strike 150.0 --ts "2024-01-15T16:00:00" --iv 0.25 --delta 0.5 \
+  --gamma 0.02 --oi 1000 --volume 500 --spot 152.0 \
+  --vendor "ibkr" --dsn "postgresql://..." --tenant-id "uuid"
+```
+
+### Bulk Data Operations (NDJSON)
+```bash
+# Ingest NDJSON files (sync)
+mds ingest-ndjson bars /path/to/bars.ndjson.gz \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --max-rows 1000 --max-ms 5000 --max-bytes 1048576
+
+# Ingest NDJSON files (async)
+mds ingest-ndjson-async bars /path/to/bars.ndjson.gz \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --max-rows 1000 --max-ms 5000 --max-bytes 1048576
+
+# Supported data types: bars, fundamentals, news, options
+```
+
+### Job Queue Operations
+```bash
+# Enqueue a background job
+mds enqueue-job --idempotency-key "job-123" --job-type "backfill" \
+  --payload '{"symbol": "AAPL", "start": "2024-01-01", "end": "2024-01-31"}' \
+  --priority "high" --dsn "postgresql://..." --tenant-id "uuid"
+```
+
+### Export Operations (CSV)
+```bash
+# Export table data to CSV
+mds dump bars /path/to/output.csv \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --vendor "ibkr" --symbol "AAPL" --timeframe "1d" \
+  --start "2024-01-01" --end "2024-01-31"
+
+# Supported tables: bars, fundamentals, news, options_snap
+```
+
+### Import Operations (CSV)
+```bash
+# Import CSV data (sync)
+mds restore bars /path/to/input.csv \
+  --dsn "postgresql://..." --tenant-id "uuid"
+
+# Import CSV data (async)
+mds restore-async bars /path/to/input.csv \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --pool-max 10 --delimiter "," --header
+
+# Import from STDIN
+zcat bars.csv.gz | mds restore-async-stdin bars \
+  --dsn "postgresql://..." --tenant-id "uuid"
+```
+
+### NDJSON Export Operations
+```bash
+# Export single table to NDJSON
+mds dump-ndjson bars /path/to/bars.ndjson.gz \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --vendor "ibkr" --symbol "AAPL" --timeframe "1d" \
+  --start "2024-01-01" --end "2024-01-31"
+
+# Export single table to NDJSON (async)
+mds dump-ndjson-async bars /path/to/bars.ndjson.gz \
+  --dsn "postgresql://..." --tenant-id "uuid"
+
+# Export ALL tables to NDJSON files
+mds dump-ndjson-all "{table}-{vendor}-{symbol}-{start}-{end}.ndjson.gz" \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --vendor "ibkr" --symbol "AAPL" --start "2024-01-01" --end "2024-01-31"
+
+# Export ALL tables to NDJSON files (async)
+mds dump-ndjson-async-all "{table}-{vendor}-{symbol}-{start}-{end}.ndjson.gz" \
+  --dsn "postgresql://..." --tenant-id "uuid"
+```
+
+## Python Library Usage
+
+### Synchronous Client (MDS)
+```python
+from mds_client import MDS, Bar, Fundamentals, News, OptionSnap
+
+# Initialize client
+mds = MDS({
+    "dsn": "postgresql://user:pass@host:port/db",
+    "tenant_id": "uuid-here"
+})
+
+# Health check
+ok = mds.health()
+version = mds.schema_version()
+
+# Write operations
+bar = Bar(
+    tenant_id="uuid",
+    vendor="ibkr",
+    symbol="AAPL",
+    timeframe="1d",
+    ts=datetime.now(),
+    open_price=150.0,
+    high_price=155.0,
+    low_price=148.0,
+    close_price=152.0,
+    volume=1000000
+)
+mds.upsert_bars([bar])
+
+# Read operations
+latest_prices = mds.latest_prices(["AAPL", "MSFT"], vendor="ibkr")
+
+# Job queue
+mds.enqueue_job(
+    idempotency_key="job-123",
+    job_type="backfill",
+    payload={"symbol": "AAPL", "start": "2024-01-01"},
+    priority="high"
+)
+
+# Cleanup
+mds.close()
+```
+
+### Asynchronous Client (AMDS)
+```python
+import asyncio
+from mds_client import AMDS, AsyncBatchProcessor, BatchConfig
+
+async def main():
+    # Initialize async client
+    amds = AMDS({
+        "dsn": "postgresql://user:pass@host:port/db",
+        "tenant_id": "uuid-here",
+        "pool_max": 10
+    })
+
+    # Batch processing
+    config = BatchConfig(max_rows=1000, max_ms=5000, max_bytes=1048576)
+    async with AsyncBatchProcessor(amds, config) as bp:
+        # Add multiple records
+        for data in large_dataset:
+            await bp.add_bar(data)
+        # Auto-flush on exit
+
+    await amds.aclose()
+
+asyncio.run(main())
+```
+
+## Environment Variables
+```bash
+# Required for CLI operations
+export MDS_DSN="postgresql://user:pass@host:port/db"
+export MDS_TENANT_ID="uuid-here"
+
+# Optional
+export MDS_APP_NAME="my-app"
+export MDS_POOL_MAX="10"
+```
+
+## Data Models
+
+### Bar (OHLCV data)
+- `tenant_id`: UUID
+- `vendor`: Data provider (e.g., "ibkr", "reuters")
+- `symbol`: Stock symbol
+- `timeframe`: Time period (e.g., "1d", "1h")
+- `ts`: Timestamp
+- `open_price`, `high_price`, `low_price`, `close_price`: OHLC values
+- `volume`: Trading volume
+
+### Fundamentals
+- `tenant_id`: UUID
+- `vendor`: Data provider
+- `symbol`: Stock symbol
+- `asof`: As-of date
+- `total_assets`, `total_liabilities`: Balance sheet items
+- `net_income`, `eps`: Income statement items
+
+### News
+- `tenant_id`: UUID
+- `vendor`: Data provider
+- `title`: Article title
+- `published_at`: Publication timestamp
+- `symbol`: Related symbol (optional)
+- `url`: Article URL (optional)
+- `sentiment_score`: Sentiment analysis score (optional)
+
+### OptionSnap
+- `tenant_id`: UUID
+- `vendor`: Data provider
+- `symbol`: Underlying symbol
+- `expiry`: Expiration date
+- `option_type`: "C" for call, "P" for put
+- `strike`: Strike price
+- `ts`: Snapshot timestamp
+- `iv`: Implied volatility
+- `delta`, `gamma`: Greeks
+- `oi`: Open interest
+- `volume`: Trading volume
+- `spot`: Underlying spot price
+
+## Key Features
+
+### Row Level Security (RLS)
+- All operations are tenant-isolated
+- Automatic `SET app.tenant_id` context
+- No cross-tenant data leakage
+
+### Batch Processing
+- Configurable batch sizes (rows, time, bytes)
+- Automatic flushing
+- Idempotent upserts with `ON CONFLICT`
+
+### TimescaleDB Integration
+- Time-series optimized storage
+- Automatic compression policies
+- Continuous aggregates support
+
+### Production Features
+- Connection pooling (sync/async)
+- Structured error handling
+- Prometheus metrics
+- Comprehensive logging

@@ -177,6 +177,11 @@
       "summary": "# Rule: Environment Setup"
     },
     {
+      "path": "cursorrules/rules/market_data_store_operations.mdc",
+      "sha": "865e8b1828ae2113",
+      "summary": "# Market Data Store Operations Cheat Sheet"
+    },
+    {
       "path": "cursorrules/rules/mds_client_library.mdc",
       "sha": "1f03c93559996fb4",
       "summary": "# Rule: MDS Client Library"

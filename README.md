@@ -215,6 +215,96 @@ export MDS_TENANT_ID="uuid-string"
 mds ping  # Uses env vars automatically
 ```
 
+## 🔗 Market Data Store Integration
+
+The `market-data-store` package is a **core dependency** for Market Data Core, providing:
+
+### 📦 **Python Package Integration**
+```python
+# Import the market data store package
+import market_data_store
+
+# Access version information
+print(f"Market Data Store version: {market_data_store.__version__}")
+
+# The package provides access to all CLI operations and Python library
+from mds_client import MDS, AMDS, Bar, Fundamentals, News, OptionSnap
+```
+
+### 🛠️ **Available Operations**
+
+The `market-data-store` package provides comprehensive data persistence capabilities:
+
+#### **Data Types Supported**
+- **Bars/OHLCV**: Time-series price data with multiple timeframes
+- **Fundamentals**: Company financial data (assets, liabilities, earnings)
+- **News**: Market news with sentiment analysis
+- **Options**: Options market data with Greeks (delta, gamma, IV)
+
+#### **CLI Operations** (via `mds` command)
+```bash
+# Health & Schema
+mds ping                    # Database connectivity check
+mds schema-version         # Get current schema version
+mds latest-prices          # Get latest prices for symbols
+
+# Individual Write Operations
+mds write-bar              # Write single OHLCV bar
+mds write-fundamental      # Write company fundamentals
+mds write-news             # Write news article
+mds write-option           # Write options data
+
+# Bulk Operations
+mds ingest-ndjson          # Bulk ingest from NDJSON files
+mds ingest-ndjson-async    # Async bulk ingest
+
+# Export/Import Operations
+mds dump                    # Export to CSV
+mds restore                 # Import from CSV
+mds restore-async           # Async CSV import
+mds dump-ndjson             # Export to NDJSON
+mds dump-ndjson-async       # Async NDJSON export
+
+# Job Queue Operations
+mds enqueue-job             # Queue background jobs
+```
+
+#### **Python Library Usage**
+```python
+# Synchronous operations
+from mds_client import MDS
+mds = MDS({"dsn": "postgresql://...", "tenant_id": "uuid"})
+
+# Write market data
+mds.upsert_bars([bar_data])
+mds.upsert_fundamentals([fundamental_data])
+mds.upsert_news([news_data])
+mds.upsert_options([option_data])
+
+# Read operations
+latest_prices = mds.latest_prices(["AAPL", "MSFT"], vendor="ibkr")
+
+# Async operations
+from mds_client import AMDS, AsyncBatchProcessor
+amds = AMDS({"dsn": "postgresql://...", "tenant_id": "uuid", "pool_max": 10})
+```
+
+### 🏗️ **Architecture Benefits**
+
+- **Tenant Isolation**: Row Level Security (RLS) ensures data separation
+- **TimescaleDB Integration**: Optimized for time-series data
+- **Connection Pooling**: High-performance async/sync connection management
+- **Batch Processing**: Efficient bulk operations with configurable batching
+- **Idempotent Operations**: Safe retry and upsert semantics
+- **Production Ready**: Comprehensive error handling, logging, and monitoring
+
+### 📋 **Quick Reference**
+
+For detailed operation documentation, see:
+- **CLI Operations**: [`cursorrules/rules/market_data_store_operations.mdc`](cursorrules/rules/market_data_store_operations.mdc)
+- **Python Library**: [`src/mds_client/`](src/mds_client/)
+- **Data Models**: [`src/mds_client/models.py`](src/mds_client/models.py)
+
 ## 📚 Client Library Documentation
 
 ### 🏗️ Architecture Overview

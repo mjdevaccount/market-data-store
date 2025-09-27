@@ -47,6 +47,51 @@
       "summary": "from fastapi import FastAPI, Response, status, HTTPException, Depends, Request"
     },
     {
+      "path": "src/mds_client/batch.py",
+      "sha": "45295b459a356494",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/mds_client/cli.py",
+      "sha": "7bf4c933c9ea5f2f",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/mds_client/client.py",
+      "sha": "6e76342247bd46a2",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/mds_client/errors.py",
+      "sha": "9447b0558b1a7195",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/mds_client/models.py",
+      "sha": "e008daf5040626cd",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/mds_client/rls.py",
+      "sha": "72e6cd8b75d36cec",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/mds_client/sql.py",
+      "sha": "7a54d7a329f1978c",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/mds_client/utils.py",
+      "sha": "95f2bd537c61ab54",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/mds_client/__init__.py",
+      "sha": "711d418ba0717a1d",
+      "summary": "\"\"\""
+    },
+    {
       "path": "migrations/env.py",
       "sha": "634d1db26808be1c",
       "summary": "from logging.config import fileConfig"

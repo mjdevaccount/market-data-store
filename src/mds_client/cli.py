@@ -365,6 +365,125 @@ def restore(
     typer.echo(f"upserted {n} rows")
 
 
+# --- async restore CSV -------------------------------------------------------
+
+
+async def _restore_csv_async_impl(
+    table: str,
+    src_path: Path,
+    dsn: str,
+    tenant_id: Optional[str],
+    app_name: str,
+    pool_max: int,
+    delimiter: str,
+    header: bool,
+    null: str,
+    temp_table_name: Optional[str],
+) -> int:
+    if table not in TABLE_PRESETS:
+        typer.secho(
+            f"Unknown table '{table}'. Valid: {', '.join(TABLE_PRESETS)}",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    amds = AMDS(
+        {
+            "dsn": dsn,
+            "tenant_id": tenant_id,
+            "app_name": app_name,
+            "pool_max": pool_max,
+        }
+    )
+    preset = TABLE_PRESETS[table]
+    try:
+        n = await amds.copy_restore_csv_async(
+            target=table,
+            cols=preset["cols"],
+            conflict_cols=preset["conflict"],
+            update_cols=preset["update"],
+            src_path=str(src_path),
+            csv_delimiter=delimiter,
+            csv_has_header=header,
+        )
+        return n
+    finally:
+        await amds.aclose()
+
+
+@app.command("restore-async")
+def restore_async(
+    table: str = typer.Argument(..., help="Target table: bars|fundamentals|news|options_snap"),
+    src_path: Path = typer.Argument(
+        ..., exists=True, readable=True, help="CSV or CSV.GZ to restore"
+    ),
+    dsn: str = typer.Option(None, "--dsn", envvar="MDS_DSN", help="PostgreSQL DSN"),
+    tenant_id: Optional[str] = typer.Option(
+        None, "--tenant-id", envvar="MDS_TENANT_ID", help="Tenant UUID for RLS"
+    ),
+    app_name: str = typer.Option("mds_client_async", "--app-name", help="application_name for pg"),
+    pool_max: int = typer.Option(10, "--pool-max", min=1, help="Async pool max connections"),
+    delimiter: str = typer.Option(",", "--delimiter", help="CSV delimiter"),
+    header: bool = typer.Option(True, "--header/--no-header", help="CSV has header row"),
+    null: str = typer.Option("\\N", "--null", help="NULL representation"),
+    temp_table_name: Optional[str] = typer.Option(
+        None, "--temp-table", help="Override temp staging table name"
+    ),
+):
+    """
+    Async CSV restore with idempotent upserts (COPY to staging → INSERT ... ON CONFLICT).
+    """
+    if not dsn:
+        typer.secho("Missing DSN. Provide --dsn or set MDS_DSN.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2)
+
+    n = asyncio.run(
+        _restore_csv_async_impl(
+            table=table,
+            src_path=src_path,
+            dsn=dsn,
+            tenant_id=tenant_id,
+            app_name=app_name,
+            pool_max=pool_max,
+            delimiter=delimiter,
+            header=header,
+            null=null,
+            temp_table_name=temp_table_name,
+        )
+    )
+    typer.secho(f"✅ restore-async complete: {n} rows upserted into {table}", fg=typer.colors.GREEN)
+
+
+# Optional alias with a more explicit name
+@app.command("restore-csv-async")
+def restore_csv_async_alias(
+    table: str = typer.Argument(...),
+    src_path: Path = typer.Argument(...),
+    dsn: str = typer.Option(None, "--dsn", envvar="MDS_DSN"),
+    tenant_id: Optional[str] = typer.Option(None, "--tenant-id", envvar="MDS_TENANT_ID"),
+    app_name: str = typer.Option("mds_client_async", "--app-name"),
+    pool_max: int = typer.Option(10, "--pool-max", min=1),
+    delimiter: str = typer.Option(",", "--delimiter"),
+    header: bool = typer.Option(True, "--header/--no-header"),
+    null: str = typer.Option("\\N", "--null"),
+    temp_table_name: Optional[str] = typer.Option(None, "--temp-table"),
+):
+    """Alias of restore-async."""
+    return restore_async(
+        table=table,
+        src_path=src_path,
+        dsn=dsn,
+        tenant_id=tenant_id,
+        app_name=app_name,
+        pool_max=pool_max,
+        delimiter=delimiter,
+        header=header,
+        null=null,
+        temp_table_name=temp_table_name,
+    )
+
+
 # --- NDJSON export commands (dump-ndjson*) -----------------------------------
 
 # ---------- small helpers ----------

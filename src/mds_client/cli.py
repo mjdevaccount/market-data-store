@@ -1,11 +1,13 @@
 import asyncio
+import gzip
+import sys
 import typer
 from datetime import datetime, date
 from typing import Optional
 
 from .client import MDS
 from .aclient import AMDS
-from .batch import BatchConfig
+from .batch import BatchProcessor, BatchConfig
 from .abatch import AsyncBatchProcessor
 from .models import Bar, Fundamentals, News, OptionSnap
 
@@ -162,7 +164,75 @@ def write_option(
     typer.echo(n)
 
 
-# ---------- async NDJSON ingest (bars|fundamentals|news|options)
+# ---------- NDJSON ingest (sync and async)
+
+
+@app.command("ingest-ndjson")
+def ingest_ndjson(
+    dsn: str,
+    tenant_id: str,
+    kind: str = typer.Argument(..., help="one of: bars|fundamentals|news|options"),
+    path: str = typer.Argument(..., help="NDJSON file path (or '-' for stdin; .gz supported)"),
+    max_rows: int = 1000,
+    max_ms: int = 5000,
+    max_bytes: int = 1_048_576,
+):
+    """
+    Synchronous NDJSON ingest using MDS + BatchProcessor.
+
+    Reads line-delimited JSON objects and batches by size/time/bytes.
+    """
+    mds = _mk_mds(dsn, tenant_id)
+    cfg = BatchConfig(max_rows=max_rows, max_ms=max_ms, max_bytes=max_bytes)
+    bp = BatchProcessor(mds, cfg)
+
+    factory_map = {
+        "bars": Bar,
+        "fundamentals": Fundamentals,
+        "news": News,
+        "options": OptionSnap,
+    }
+    factory = factory_map.get(kind.lower())
+    if not factory:
+        raise typer.BadParameter("kind must be one of: bars|fundamentals|news|options")
+
+    # open file/stream
+    if path == "-":
+        fh = sys.stdin
+        close_needed = False
+    elif path.endswith(".gz"):
+        fh = gzip.open(path, "rt", encoding="utf-8")
+        close_needed = True
+    else:
+        fh = open(path, "r", encoding="utf-8")
+        close_needed = True
+
+    count = 0
+    try:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            obj = factory.model_validate_json(line)
+
+            if kind == "bars":
+                bp.add_bar(obj)  # type: ignore[arg-type]
+            elif kind == "fundamentals":
+                bp.add_fundamental(obj)  # type: ignore[arg-type]
+            elif kind == "news":
+                bp.add_news(obj)  # type: ignore[arg-type]
+            else:
+                bp.add_option(obj)  # type: ignore[arg-type]
+
+            count += 1
+
+        # final flush
+        bp.flush()
+    finally:
+        if close_needed:
+            fh.close()
+
+    typer.echo(count)
 
 
 @app.command("ingest-ndjson-async")

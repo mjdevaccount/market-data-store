@@ -63,7 +63,7 @@
     },
     {
       "path": "src/mds_client/cli.py",
-      "sha": "88347c37564a04c5",
+      "sha": "abfa62b45f4d537b",
       "summary": "import asyncio"
     },
     {

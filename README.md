@@ -384,6 +384,15 @@ mds enqueue-job --dsn "..." --tenant-id "uuid" \
   --idempotency-key "job-123" --job-type "backfill" \
   --payload '{"symbol": "AAPL", "start": "2024-01-01"}' --priority "high"
 
+# Sync NDJSON ingest (stdin or file, .gz supported)
+mds ingest-ndjson bars ./bars.ndjson \
+  --dsn "postgresql://..." --tenant-id "uuid" \
+  --max-rows 2000 --max-ms 3000
+
+# Or from stdin
+cat bars.ndjson | mds ingest-ndjson bars - \
+  --dsn "postgresql://..." --tenant-id "uuid"
+
 # Async NDJSON ingest (uses AMDS + AsyncBatchProcessor)
 mds ingest-ndjson-async bars ./bars.ndjson \
   --dsn "postgresql://..." --tenant-id "uuid" \

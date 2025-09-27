@@ -43,6 +43,17 @@ def apply_compression(engine: Engine) -> None:
         return
     with engine.begin() as conn:
         for table, interval in COMPRESSION_POLICIES:
+            # Check if RLS is enabled on the table
+            rls_check = conn.execute(
+                text("SELECT relrowsecurity FROM pg_class WHERE relname = :t").bindparams(t=table)
+            ).scalar()
+
+            if rls_check:
+                logger.warning(
+                    f"Skipping compression on {table} - RLS is enabled (compression incompatible with RLS)"
+                )
+                continue
+
             logger.info(f"Enabling compression and adding policy on {table} ({interval})")
             conn.execute(text(f"ALTER TABLE {table} SET (timescaledb.compress);"))
             conn.execute(

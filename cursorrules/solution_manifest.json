@@ -8,7 +8,7 @@
     },
     {
       "path": "src/datastore/cli.py",
-      "sha": "c700c5641e391002",
+      "sha": "5c67b34b25308bbe",
       "summary": "import sys"
     },
     {
@@ -28,7 +28,7 @@
     },
     {
       "path": "src/datastore/timescale_policies.py",
-      "sha": "bc852c1bab260613",
+      "sha": "1ce6033c21ee6117",
       "summary": "from loguru import logger"
     },
     {

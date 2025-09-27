@@ -139,6 +139,9 @@ python -m datastore.cli policies
 **Option 3: Fresh schema setup**
 ```powershell
 # For a completely fresh database, you can use the production schema directly
+# After a fresh initdb bootstrap, stamp Alembic to prevent migration conflicts:
+python -m datastore.cli stamp-head
+
 # See DATABASE_SETUP.md for detailed instructions
 ```
 

@@ -55,5 +55,19 @@ def policies() -> None:
     logger.success("Policies (and aggregates) applied.")
 
 
+@app.command()
+def stamp_head() -> None:
+    """Stamp Alembic head (for fresh initdb bootstrap)."""
+    settings = get_settings()
+    ini = settings.ALEMBIC_INI
+    logger.info(f"Stamping alembic head using {ini}")
+    try:
+        subprocess.check_call(["alembic", "-c", ini, "stamp", "head"])
+        logger.success("Alembic head stamped successfully.")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Alembic stamp failed: {e}")
+        sys.exit(e.returncode)
+
+
 if __name__ == "__main__":
     app()

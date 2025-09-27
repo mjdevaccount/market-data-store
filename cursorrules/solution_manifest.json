@@ -68,12 +68,12 @@
     },
     {
       "path": "src/mds_client/aclient.py",
-      "sha": "5dec067e2baca7dd",
+      "sha": "e982ea0eb7d88895",
       "summary": "from __future__ import annotations"
     },
     {
       "path": "src/mds_client/batch.py",
-      "sha": "aec77ac636149325",
+      "sha": "486efff85bc7bb25",
       "summary": "from __future__ import annotations"
     },
     {
@@ -83,7 +83,7 @@
     },
     {
       "path": "src/mds_client/client.py",
-      "sha": "6a829abaa9d92e6b",
+      "sha": "cad00d7427be7abd",
       "summary": "from __future__ import annotations"
     },
     {
@@ -168,7 +168,7 @@
     },
     {
       "path": "cursorrules/rules/coding_standards.mdc",
-      "sha": "9aba7a6714c2f2de",
+      "sha": "f924c740c607d24e",
       "summary": "# Rule: Coding Standards"
     },
     {
@@ -193,7 +193,7 @@
     },
     {
       "path": "cursorrules/rules/mds_client_library.mdc",
-      "sha": "1f03c93559996fb4",
+      "sha": "13b37a3cb2d68ef1",
       "summary": "# Rule: MDS Client Library"
     },
     {

@@ -10,6 +10,8 @@ REQUIREMENTS
 - Use pydantic BaseSettings for config.
 - Log with loguru, not print().
 - Add Prometheus metrics for operations.
+- Use context managers for all resource management (pools, connections).
+- Always use `with` or `async with` for MDS/AMDS clients and batch processors.
 
 FORMATTING
 - Black for code formatting.

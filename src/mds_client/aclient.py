@@ -142,6 +142,13 @@ class AMDS:
         self.app_name = self.cfg.get("app_name")
         self._pool_opened = False
 
+    async def __aenter__(self):
+        await self.aopen()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.aclose()
+
     async def aopen(self) -> None:
         """Explicitly open the connection pool."""
         if not self._pool_opened:

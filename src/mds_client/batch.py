@@ -72,6 +72,14 @@ class BatchProcessor:
         self._pending_bytes: int = 0
         self._last_flush: float = time.monotonic()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.flush()
+        if hasattr(self._mds, "close"):
+            self._mds.close()
+
     # ---- public adds ----
 
     def add_bar(self, row: Bar) -> None:
@@ -209,6 +217,8 @@ class AsyncBatchProcessor:
             except asyncio.CancelledError:
                 pass
         await self.flush()
+        if hasattr(self._amds, "aclose"):
+            await self._amds.aclose()
 
     # ---- public adds ----
 

@@ -137,6 +137,17 @@ class MDS:
         self.statement_timeout_ms = self.cfg.get("statement_timeout_ms")
         self.app_name = self.cfg.get("app_name")
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def close(self):
+        """Close the connection pool."""
+        if hasattr(self, "pool") and self.pool:
+            self.pool.close()
+
     # ---------- context / setup ----------
 
     @contextmanager
@@ -172,9 +183,6 @@ class MDS:
                 return row[0] if row else None
             except psycopg.errors.UndefinedTable:
                 return None
-
-    def close(self) -> None:
-        self.pool.close()
 
     # ---------- generic upsert ----------
 

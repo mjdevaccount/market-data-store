@@ -8,6 +8,7 @@ ARCHITECTURE
 - Connection pooling: psycopg 3 + psycopg_pool for production reliability
 - RLS integration: Automatic tenant isolation via DSN options or per-connection SET
 - Performance optimization: Multiple write modes (executemany, execute_values, COPY)
+- Context managers: All clients support `with`/`async with` for automatic resource cleanup
 
 CORE COMPONENTS
 - client.py: MDS sync facade with ConnectionPool, upsert methods, backup/restore
@@ -46,6 +47,13 @@ ENVIRONMENT VARIABLES
 - MDS_WRITE_MODE: auto | executemany | values | copy
 - MDS_VALUES_MIN_ROWS: Threshold for execute_values
 - MDS_COPY_MIN_ROWS: Threshold for COPY
+
+CONTEXT MANAGER USAGE
+- Always use `with` for MDS clients: `with MDS({...}) as mds:`
+- Always use `async with` for AMDS clients: `async with AMDS({...}) as amds:`
+- Batch processors support context managers: `with BatchProcessor(mds, config) as processor:`
+- Async batch processors: `async with AsyncBatchProcessor(amds, config) as processor:`
+- Automatic resource cleanup prevents pool warnings and hanging threads
 
 TROUBLESHOOTING
 - Tenant ID errors: Use tenants.id (UUID), not tenants.tenant_id (VARCHAR)

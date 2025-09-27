@@ -1,607 +1,247 @@
 from __future__ import annotations
 
-import io
 import csv
-import uuid
-import os
 import gzip
-from dataclasses import dataclass
-from typing import Iterable, Optional, Sequence, List, BinaryIO
+import io
+from typing import Iterable, Sequence, TypedDict
 
 import psycopg
 from psycopg import sql as psql
+from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from .models import Bar, Fundamentals, News, OptionSnap, LatestPrice
-from . import sql as q
-
-try:
-    from .errors import (
-        MDSOperationalError,
-        RetryableError,
-        ConstraintViolation,
-        RLSDenied,
-        TimeoutExceeded,
-    )
-except Exception:
-
-    class MDSOperationalError(Exception): ...
-
-    class RetryableError(MDSOperationalError): ...
-
-    class ConstraintViolation(MDSOperationalError): ...
-
-    class RLSDenied(MDSOperationalError): ...
-
-    class TimeoutExceeded(MDSOperationalError): ...
+from .sql import (
+    TABLE_PRESETS,
+    upsert_statement,
+    latest_prices_select,
+    bars_window_select,
+    copy_to_stdout_ndjson,
+    copy_to_stdout_csv,
+)
 
 
-@dataclass
-class _Cfg:
+class AMDSConfig(TypedDict, total=False):
     dsn: str
-    tenant_id: Optional[str] = None
-    app_name: Optional[str] = "mds_client_async"
-    connect_timeout: float = 10.0
-    statement_timeout_ms: Optional[int] = None
-    pool_min: int = 1
-    pool_max: int = 10
-    # fast-path toggles
-    write_mode: str = os.environ.get("MDS_WRITE_MODE", "auto")
-    copy_min_rows: int = int(os.environ.get("MDS_COPY_MIN_ROWS", "5000"))
+    tenant_id: str
+    app_name: str
+    statement_timeout_ms: int
+    pool_max: int
+    write_mode: str  # "auto" | "executemany" | "copy"   (async: no execute_values)
+    copy_min_rows: int
+
+
+DEFAULTS: AMDSConfig = {
+    "pool_max": 10,
+    "write_mode": "auto",
+    "copy_min_rows": 5000,
+}
 
 
 class AMDS:
-    def __init__(self, config: dict):
-        c = _Cfg(**config)
-        self._cfg = c
-        self._pool = AsyncConnectionPool(
-            conninfo=c.dsn,
-            min_size=c.pool_min,
-            max_size=c.pool_max,
-            timeout=c.connect_timeout,
-            kwargs={},
+    def __init__(self, cfg: AMDSConfig):
+        self.cfg: AMDSConfig = {**DEFAULTS, **(cfg or {})}
+        if "dsn" not in self.cfg:
+            raise ValueError("dsn required")
+        self.pool = AsyncConnectionPool(
+            conninfo=self.cfg["dsn"],
+            max_size=self.cfg["pool_max"],
+            kwargs={"autocommit": False},
         )
+        self.tenant_id = self.cfg.get("tenant_id")
+        self.statement_timeout_ms = self.cfg.get("statement_timeout_ms")
+        self.app_name = self.cfg.get("app_name")
 
     async def aclose(self) -> None:
-        await self._pool.close()
+        await self.pool.close()
 
-    # ---------- internal helpers ----------
-
-    async def _prepare_conn(self, conn: psycopg.AsyncConnection) -> None:
-        async with conn.cursor() as cur:
-            if self._cfg.app_name:
-                await cur.execute("SET application_name = %s", (self._cfg.app_name,))
-            if self._cfg.statement_timeout_ms is not None:
-                await cur.execute(
-                    "SET statement_timeout = %s", (f"{self._cfg.statement_timeout_ms}ms",)
+    async def _conn(self):
+        async with self.pool.connection() as conn:
+            if self.app_name:
+                await conn.execute(
+                    psql.SQL("SET application_name = {}").format(psql.Literal(self.app_name))
                 )
-            if self._cfg.tenant_id:
-                await cur.execute("SET app.tenant_id = %s", (self._cfg.tenant_id,))
-
-    async def _get_conn(self) -> psycopg.AsyncConnection:
-        conn = await self._pool.getconn()
-        try:
-            await self._prepare_conn(conn)
-        except Exception:
-            await self._pool.putconn(conn, close=True)
-            raise
-        return conn
-
-    async def _put_conn_ok(self, conn: psycopg.AsyncConnection) -> None:
-        await self._pool.putconn(conn)
-
-    @staticmethod
-    def _dicts(rows: Iterable) -> list[dict]:
-        return [r.model_dump(mode="python") if hasattr(r, "model_dump") else r for r in rows]
-
-    def _choose_mode(self, nrows: int) -> str:
-        mode = (self._cfg.write_mode or "auto").lower()
-        if mode == "auto":
-            return "copy" if nrows >= self._cfg.copy_min_rows else "executemany"
-        return mode
-
-    @staticmethod
-    def _csv_bytes(rows: list[dict], cols: list[str]) -> bytes:
-        buf = io.StringIO()
-        w = csv.writer(buf, lineterminator="\n")
-        for r in rows:
-            w.writerow([r.get(c) if r.get(c) is not None else r.get(c) for c in cols])
-        return buf.getvalue().encode()
-
-    async def _copy_upsert(
-        self,
-        conn: psycopg.AsyncConnection,
-        *,
-        target: str,
-        cols: list[str],
-        conflict_cols: list[str],
-        update_cols: list[str],
-        rows: list[dict],
-    ) -> int:
-        tmp = f"tmp_{target}_{uuid.uuid4().hex[:8]}"
-        async with conn.cursor() as cur:
-            await cur.execute(
-                psql.SQL("CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS)").format(
-                    psql.Identifier(tmp), psql.Identifier(target)
+            if self.statement_timeout_ms:
+                await conn.execute(
+                    psql.SQL("SET statement_timeout = {}").format(
+                        psql.Literal(int(self.statement_timeout_ms))
+                    )
                 )
-            )
-            copy_sql = psql.SQL("COPY {} ({}) FROM STDIN WITH (FORMAT csv)").format(
-                psql.Identifier(tmp),
-                psql.SQL(", ").join(psql.Identifier(c) for c in cols),
-            )
-            data = self._csv_bytes(rows, cols)
-            async with cur.copy(copy_sql) as cp:
-                await cp.write(data)
+            if self.tenant_id:
+                await conn.execute(
+                    psql.SQL("SET LOCAL app.tenant_id = {}").format(psql.Literal(self.tenant_id))
+                )
+            yield conn
 
-            insert_sql = psql.SQL(
-                """
-                INSERT INTO {} ({cols})
-                SELECT {cols} FROM {}
-                ON CONFLICT ({conflict}) DO UPDATE
-                SET {updates}, updated_at = NOW()
-            """
-            ).format(
-                psql.Identifier(target),
-                psql.Identifier(tmp),
-                cols=psql.SQL(", ").join(psql.Identifier(c) for c in cols),
-                conflict=psql.SQL(", ").join(psql.Identifier(c) for c in conflict_cols),
-                updates=psql.SQL(", ").join(
-                    psql.SQL("{} = EXCLUDED.{}").format(psql.Identifier(c), psql.Identifier(c))
-                    for c in update_cols
-                ),
-            )
-            await cur.execute(insert_sql)
-            return cur.rowcount
-
-    # ---------- admin / health ----------
+    # ---------- health / meta ----------
 
     async def health(self) -> bool:
-        conn = await self._get_conn()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(q.HEALTH)
-                await cur.fetchone()
-                await conn.commit()
-                return True
-        except Exception:
-            await conn.rollback()
-            raise
-        finally:
-            await self._put_conn_ok(conn)
+        async for conn in self._conn():
+            await conn.execute("SELECT 1")
+            return True
 
-    async def schema_version(self) -> Optional[str]:
-        conn = await self._get_conn()
-        try:
-            async with conn.cursor() as cur:
-                try:
-                    await cur.execute(q.SCHEMA_VERSION)
-                    row = await cur.fetchone()
-                    await conn.commit()
-                    return row[0] if row else None
-                except psycopg.errors.UndefinedTable:
-                    await conn.commit()
-                    return None
-        except Exception:
-            await conn.rollback()
-            raise
-        finally:
-            await self._put_conn_ok(conn)
+    async def schema_version(self) -> str | None:
+        async for conn in self._conn():
+            try:
+                cur = await conn.execute("SELECT version_num FROM alembic_version LIMIT 1")
+                row = await cur.fetchone()
+                return row[0] if row else None
+            except psycopg.errors.UndefinedTable:
+                return None
+
+    # ---------- generic upsert ----------
+
+    def _coerce_rows(self, rows: Iterable[object]) -> list[dict]:
+        out: list[dict] = []
+        for r in rows:
+            if r is None:
+                continue
+            if hasattr(r, "model_dump"):
+                out.append(r.model_dump(exclude_none=True))
+            elif isinstance(r, dict):
+                out.append({k: v for k, v in r.items() if v is not None})
+            else:
+                out.append({k: v for k, v in vars(r).items() if v is not None})
+        return out
+
+    def _write_mode(self, nrows: int) -> str:
+        mode = (self.cfg.get("write_mode") or "auto").lower()
+        if mode != "auto":
+            return mode
+        if nrows >= int(self.cfg["copy_min_rows"]):
+            return "copy"
+        return "executemany"
+
+    async def _copy_from_memory_csv(
+        self, conn: psycopg.AsyncConnection, table: str, cols: Sequence[str], rows: Sequence[dict]
+    ):
+        sio = io.StringIO()
+        writer = csv.DictWriter(sio, fieldnames=list(cols))
+        writer.writeheader()
+        for r in rows:
+            writer.writerow({c: r.get(c) for c in cols})
+        sio.seek(0)
+        async with (
+            conn.cursor() as cur,
+            cur.copy(
+                psql.SQL("COPY {} ({}) FROM STDIN WITH CSV HEADER").format(
+                    psql.Identifier(table),
+                    psql.SQL(", ").join(psql.Identifier(c) for c in cols),
+                )
+            ) as cp,
+        ):
+            await cp.write(sio.read())
+
+    async def _upsert(self, table: str, rows: Iterable[object]) -> int:
+        preset = TABLE_PRESETS[table]
+        cols, conflict, update = preset["cols"], preset["conflict"], preset["update"]
+        sql_stmt = upsert_statement(table, cols, conflict, update)
+        data = self._coerce_rows(rows)
+        if not data:
+            return 0
+
+        async for conn in self._conn():
+            async with conn.cursor(row_factory=dict_row) as cur:
+                mode = self._write_mode(len(data))
+                if mode == "executemany":
+                    await cur.executemany(sql_stmt, data)
+                elif mode == "copy":
+                    temp = psql.Identifier(f"tmp_{table}_copy")
+                    await cur.execute(
+                        psql.SQL(
+                            "CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS) ON COMMIT DROP"
+                        ).format(temp, psql.Identifier(table))
+                    )
+                    await self._copy_from_memory_csv(conn, temp.string, cols, data)
+                    ins = psql.SQL(
+                        "INSERT INTO {} ({cols}) SELECT {cols} FROM {} "
+                        "ON CONFLICT ({conf}) DO UPDATE SET {upd}"
+                    ).format(
+                        psql.Identifier(table),
+                        temp,
+                        cols=psql.SQL(", ").join(psql.Identifier(c) for c in cols),
+                        conf=psql.SQL(", ").join(psql.Identifier(c) for c in conflict),
+                        upd=psql.SQL(", ").join(
+                            psql.SQL("{} = EXCLUDED.{}").format(
+                                psql.Identifier(c), psql.Identifier(c)
+                            )
+                            for c in update
+                        ),
+                    )
+                    await cur.execute(ins)
+                else:
+                    raise ValueError(f"unknown write_mode {mode}")
+            await conn.commit()
+        return len(data)
+
+    # ---------- typed upserts ----------
+
+    async def upsert_bars(self, rows: Sequence[object]) -> int:
+        return await self._upsert("bars", rows)
+
+    async def upsert_fundamentals(self, rows: Sequence[object]) -> int:
+        return await self._upsert("fundamentals", rows)
+
+    async def upsert_news(self, rows: Sequence[object]) -> int:
+        return await self._upsert("news", rows)
+
+    async def upsert_options(self, rows: Sequence[object]) -> int:
+        return await self._upsert("options_snap", rows)
 
     # ---------- reads ----------
 
-    async def latest_prices(self, symbols: Sequence[str], vendor: str) -> List[LatestPrice]:
-        syms = [s.upper() for s in symbols]
-        conn = await self._get_conn()
+    async def latest_prices(self, symbols: Iterable[str], vendor: str) -> list[dict]:
+        if not self.tenant_id:
+            raise ValueError("tenant_id required for latest_prices()")
+        q = latest_prices_select(symbols, vendor, self.tenant_id)
+        async for conn in self._conn():
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(q)
+                return list(await cur.fetchall())
+
+    async def bars_window(
+        self, *, symbol: str, timeframe: str, start: str, end: str, vendor: str
+    ) -> list[dict]:
+        q = bars_window_select(
+            symbol=symbol, timeframe=timeframe, start=start, end=end, vendor=vendor
+        )
+        async for conn in self._conn():
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(q)
+                return list(await cur.fetchall())
+
+    # ---------- COPY export (CSV / NDJSON) ----------
+
+    async def copy_out_csv(self, *, select_sql: psql.Composed, out_path: str) -> int:
+        copy_sql = copy_to_stdout_csv(select_sql)
+        writer = gzip.open(out_path, "wb") if out_path.endswith(".gz") else open(out_path, "wb")
         try:
-            async with conn.cursor() as cur:
-                await cur.execute(q.LATEST_PRICES, {"vendor": vendor, "symbols": syms})
-                rows = await cur.fetchall()
-                await conn.commit()
-                out: list[LatestPrice] = []
-                for tenant_id, vendor, symbol, price, price_ts in rows:
-                    out.append(
-                        LatestPrice(
-                            tenant_id=str(tenant_id),
-                            vendor=vendor,
-                            symbol=symbol,
-                            price=float(price),
-                            price_timestamp=price_ts,
-                        )
-                    )
-                return out
-        except Exception:
-            await conn.rollback()
-            raise
+            async for conn in self._conn():
+                async with conn.cursor() as cur, cur.copy(copy_sql) as cp:
+                    n = 0
+                    while True:
+                        chunk = await cp.read()
+                        if not chunk:
+                            break
+                        writer.write(chunk)
+                        n += len(chunk)
+                    return n
         finally:
-            await self._put_conn_ok(conn)
+            writer.close()
 
-    async def bars_window(self, symbol: str, timeframe: str, start, end, vendor: str):
-        conn = await self._get_conn()
+    async def copy_out_ndjson(self, *, select_sql: psql.Composed, out_path: str) -> int:
+        copy_sql = copy_to_stdout_ndjson(select_sql)
+        writer = gzip.open(out_path, "wb") if out_path.endswith(".gz") else open(out_path, "wb")
         try:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    q.BARS_WINDOW,
-                    {
-                        "vendor": vendor,
-                        "symbol": symbol.upper(),
-                        "timeframe": timeframe,
-                        "start": start,
-                        "end": end,
-                    },
-                )
-                rows = await cur.fetchall()
-                await conn.commit()
-                return rows
-        except Exception:
-            await conn.rollback()
-            raise
+            async for conn in self._conn():
+                async with conn.cursor() as cur, cur.copy(copy_sql) as cp:
+                    n = 0
+                    while True:
+                        chunk = await cp.read()
+                        if not chunk:
+                            break
+                        writer.write(chunk)
+                        writer.write(b"\n")
+                        n += len(chunk) + 1
+                    return n
         finally:
-            await self._put_conn_ok(conn)
-
-    # ---------- writes (UPSERTS) ----------
-
-    async def upsert_bars(self, rows: Sequence[Bar]) -> int:
-        payload = self._dicts(rows)
-        if not payload:
-            return 0
-        for r in payload:
-            r["symbol"] = r["symbol"].upper()
-        mode = self._choose_mode(len(payload))
-        conn = await self._get_conn()
-        try:
-            async with conn.cursor() as cur:
-                if mode == "copy":
-                    n = await self._copy_upsert(
-                        conn,
-                        target="bars",
-                        cols=[
-                            "ts",
-                            "tenant_id",
-                            "vendor",
-                            "symbol",
-                            "timeframe",
-                            "open_price",
-                            "high_price",
-                            "low_price",
-                            "close_price",
-                            "volume",
-                        ],
-                        conflict_cols=["ts", "tenant_id", "vendor", "symbol", "timeframe"],
-                        update_cols=[
-                            "open_price",
-                            "high_price",
-                            "low_price",
-                            "close_price",
-                            "volume",
-                        ],
-                        rows=payload,
-                    )
-                else:
-                    await cur.executemany(q.UPSERT_BARS, payload)
-                    n = len(payload)
-            await conn.commit()
-            return n
-        except Exception:
-            await conn.rollback()
-            raise
-        finally:
-            await self._put_conn_ok(conn)
-
-    async def upsert_fundamentals(self, rows: Sequence[Fundamentals]) -> int:
-        payload = self._dicts(rows)
-        if not payload:
-            return 0
-        for r in payload:
-            r["symbol"] = r["symbol"].upper()
-        mode = self._choose_mode(len(payload))
-        conn = await self._get_conn()
-        try:
-            async with conn.cursor() as cur:
-                if mode == "copy":
-                    n = await self._copy_upsert(
-                        conn,
-                        target="fundamentals",
-                        cols=[
-                            "asof",
-                            "tenant_id",
-                            "vendor",
-                            "symbol",
-                            "total_assets",
-                            "total_liabilities",
-                            "net_income",
-                            "eps",
-                        ],
-                        conflict_cols=["asof", "tenant_id", "vendor", "symbol"],
-                        update_cols=["total_assets", "total_liabilities", "net_income", "eps"],
-                        rows=payload,
-                    )
-                else:
-                    await cur.executemany(q.UPSERT_FUNDAMENTALS, payload)
-                    n = len(payload)
-            await conn.commit()
-            return n
-        except Exception:
-            await conn.rollback()
-            raise
-        finally:
-            await self._put_conn_ok(conn)
-
-    async def upsert_news(self, rows: Sequence[News]) -> int:
-        payload = self._dicts(rows)
-        if not payload:
-            return 0
-        for r in payload:
-            if not r.get("id"):
-                r["id"] = str(uuid.uuid4())
-        mode = self._choose_mode(len(payload))
-        conn = await self._get_conn()
-        try:
-            async with conn.cursor() as cur:
-                if mode == "copy":
-                    n = await self._copy_upsert(
-                        conn,
-                        target="news",
-                        cols=[
-                            "published_at",
-                            "tenant_id",
-                            "vendor",
-                            "id",
-                            "symbol",
-                            "title",
-                            "url",
-                            "sentiment_score",
-                        ],
-                        conflict_cols=["published_at", "tenant_id", "vendor", "id"],
-                        update_cols=["symbol", "title", "url", "sentiment_score"],
-                        rows=payload,
-                    )
-                else:
-                    await cur.executemany(q.UPSERT_NEWS, payload)
-                    n = len(payload)
-            await conn.commit()
-            return n
-        except Exception:
-            await conn.rollback()
-            raise
-        finally:
-            await self._put_conn_ok(conn)
-
-    async def upsert_options(self, rows: Sequence[OptionSnap]) -> int:
-        payload = self._dicts(rows)
-        if not payload:
-            return 0
-        for r in payload:
-            r["symbol"] = r["symbol"].upper()
-        mode = self._choose_mode(len(payload))
-        conn = await self._get_conn()
-        try:
-            async with conn.cursor() as cur:
-                if mode == "copy":
-                    n = await self._copy_upsert(
-                        conn,
-                        target="options_snap",
-                        cols=[
-                            "ts",
-                            "tenant_id",
-                            "vendor",
-                            "symbol",
-                            "expiry",
-                            "option_type",
-                            "strike",
-                            "iv",
-                            "delta",
-                            "gamma",
-                            "oi",
-                            "volume",
-                            "spot",
-                        ],
-                        conflict_cols=[
-                            "ts",
-                            "tenant_id",
-                            "vendor",
-                            "symbol",
-                            "expiry",
-                            "option_type",
-                            "strike",
-                        ],
-                        update_cols=["iv", "delta", "gamma", "oi", "volume", "spot"],
-                        rows=payload,
-                    )
-                else:
-                    await cur.executemany(q.UPSERT_OPTIONS, payload)
-                    n = len(payload)
-            await conn.commit()
-            return n
-        except Exception:
-            await conn.rollback()
-            raise
-        finally:
-            await self._put_conn_ok(conn)
-
-    async def enqueue_job(
-        self, *, idempotency_key: str, job_type: str, payload: dict, priority: str = "medium"
-    ) -> None:
-        conn = await self._get_conn()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    q.ENQUEUE_JOB,
-                    {
-                        "idempotency_key": idempotency_key,
-                        "job_type": job_type,
-                        "payload": payload,
-                        "priority": priority,
-                    },
-                )
-            await conn.commit()
-        except Exception:
-            await conn.rollback()
-            raise
-        finally:
-            await self._put_conn_ok(conn)
-
-    # ---------- backup/export/import helpers ----------
-
-    async def copy_out_csv(
-        self,
-        *,
-        select_sql: psql.Composed,
-        out: BinaryIO | None = None,
-        out_path: str | None = None,
-        gzip_level: int = 6,
-    ) -> int:
-        if (out is None) == (out_path is None):
-            raise ValueError("Provide exactly one of `out` or `out_path`")
-        total = 0
-        conn = await self._get_conn()
-        try:
-            async with conn.cursor() as cur:
-                copy_sql = psql.SQL("COPY ({}) TO STDOUT WITH (FORMAT csv, HEADER true)").format(
-                    select_sql
-                )
-                f = out
-                if out_path is not None:
-                    f = (
-                        gzip.open(out_path, "wb", gzip_level)
-                        if out_path.endswith(".gz")
-                        else open(out_path, "wb")
-                    )
-                try:
-                    async with cur.copy(copy_sql) as cp:
-                        while True:
-                            chunk = await cp.read()
-                            if not chunk:
-                                break
-                            f.write(chunk)
-                            total += len(chunk)
-                finally:
-                    if out_path is not None and f is not None:
-                        f.close()
-            await conn.commit()
-            return total
-        except Exception:
-            await conn.rollback()
-            raise
-        finally:
-            await self._put_conn_ok(conn)
-
-    async def copy_restore_csv(
-        self,
-        *,
-        target: str,
-        cols: list[str],
-        conflict_cols: list[str],
-        update_cols: list[str],
-        src: BinaryIO | None = None,
-        src_path: str | None = None,
-    ) -> int:
-        if (src is None) == (src_path is None):
-            raise ValueError("Provide exactly one of `src` or `src_path`")
-        conn = await self._get_conn()
-        try:
-            async with conn.cursor() as cur:
-                tmp = f"tmp_{target}_restore"
-                await cur.execute(
-                    psql.SQL("CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS)").format(
-                        psql.Identifier(tmp), psql.Identifier(target)
-                    )
-                )
-                copy_in_sql = psql.SQL(
-                    "COPY {} ({}) FROM STDIN WITH (FORMAT csv, HEADER true)"
-                ).format(
-                    psql.Identifier(tmp),
-                    psql.SQL(", ").join(psql.Identifier(c) for c in cols),
-                )
-                f = src
-                if src_path is not None:
-                    f = (
-                        gzip.open(src_path, "rb")
-                        if src_path.endswith(".gz")
-                        else open(src_path, "rb")
-                    )
-                try:
-                    async with cur.copy(copy_in_sql) as cp:
-                        while True:
-                            chunk = f.read(1 << 20)
-                            if not chunk:
-                                break
-                            await cp.write(chunk)
-                finally:
-                    if src_path is not None and f is not None:
-                        f.close()
-
-                insert_sql = psql.SQL(
-                    """
-                    INSERT INTO {} ({cols})
-                    SELECT {cols} FROM {}
-                    ON CONFLICT ({conflict}) DO UPDATE
-                    SET {updates}, updated_at = NOW()
-                """
-                ).format(
-                    psql.Identifier(target),
-                    psql.Identifier(tmp),
-                    cols=psql.SQL(", ").join(psql.Identifier(c) for c in cols),
-                    conflict=psql.SQL(", ").join(psql.Identifier(c) for c in conflict_cols),
-                    updates=psql.SQL(", ").join(
-                        psql.SQL("{} = EXCLUDED.{}").format(psql.Identifier(c), psql.Identifier(c))
-                        for c in update_cols
-                    ),
-                )
-                await cur.execute(insert_sql)
-            await conn.commit()
-            return cur.rowcount  # type: ignore[attr-defined]
-        except Exception:
-            await conn.rollback()
-            raise
-        finally:
-            await self._put_conn_ok(conn)
-
-    async def copy_out_ndjson(
-        self,
-        *,
-        select_sql: psql.Composed,
-        out: BinaryIO | None = None,
-        out_path: str | None = None,
-        gzip_level: int = 6,
-    ) -> int:
-        """
-        Async NDJSON stream via COPY (SELECT to_jsonb(t) FROM (<select_sql>) t) TO STDOUT.
-        Returns total bytes written.
-        """
-        if (out is None) == (out_path is None):
-            raise ValueError("Provide exactly one of `out` or `out_path`")
-
-        total = 0
-        conn = await self._get_conn()
-        try:
-            async with conn.cursor() as cur:
-                copy_sql = psql.SQL("COPY (SELECT to_jsonb(t) FROM ({}) t) TO STDOUT").format(
-                    select_sql
-                )
-
-                sink = out
-                if out_path is not None:
-                    sink = (
-                        gzip.open(out_path, "wb", gzip_level)
-                        if out_path.endswith(".gz")
-                        else open(out_path, "wb")
-                    )
-
-                try:
-                    async with cur.copy(copy_sql) as cp:
-                        while True:
-                            chunk = await cp.read()
-                            if not chunk:
-                                break
-                            sink.write(chunk)
-                            total += len(chunk)
-                finally:
-                    if out_path is not None and sink is not None:
-                        sink.close()
-            await conn.commit()
-            return total
-        except Exception:
-            await conn.rollback()
-            raise
-        finally:
-            await self._put_conn_ok(conn)
+            writer.close()

@@ -1,17 +1,16 @@
-from .client import MDS
-from .aclient import AMDS
-from .batch import BatchProcessor, AsyncBatchProcessor, BatchConfig
-from .models import Bar, Fundamentals, News, OptionSnap, LatestPrice
+from .client import MDS, MDSConfig
+from .aclient import AMDS, AMDSConfig
+from .sql import TABLE_PRESETS, build_ndjson_select
+
+# If you already have models & batch processors defined, export here too:
+# from .models import Bar, Fundamentals, News, OptionSnap, LatestPrice
+# from .batch import BatchProcessor, AsyncBatchProcessor, BatchConfig
 
 __all__ = [
     "MDS",
+    "MDSConfig",
     "AMDS",
-    "BatchProcessor",
-    "AsyncBatchProcessor",
-    "BatchConfig",
-    "Bar",
-    "Fundamentals",
-    "News",
-    "OptionSnap",
-    "LatestPrice",
+    "AMDSConfig",
+    "TABLE_PRESETS",
+    "build_ndjson_select",
 ]

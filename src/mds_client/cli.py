@@ -7,10 +7,11 @@ from typing import Optional
 
 import typer
 
-from . import MDS, AMDS, BatchProcessor, AsyncBatchProcessor, BatchConfig
+from . import MDS, AMDS
+from .batch import BatchProcessor, AsyncBatchProcessor, BatchConfig
 from .models import Bar, Fundamentals, News, OptionSnap
 from .utils import iter_ndjson, coerce_model
-from .client import TABLE_PRESETS
+from .sql import TABLE_PRESETS
 from psycopg import sql as psql
 import sys
 import re

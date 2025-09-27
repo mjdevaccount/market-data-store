@@ -48,7 +48,7 @@
     },
     {
       "path": "src/mds_client/aclient.py",
-      "sha": "2e1782809fd1a698",
+      "sha": "e20733565d42ecc1",
       "summary": "from __future__ import annotations"
     },
     {
@@ -58,12 +58,12 @@
     },
     {
       "path": "src/mds_client/cli.py",
-      "sha": "418d6bf0a6df0884",
+      "sha": "97a7bc7d74b3b9e4",
       "summary": "from __future__ import annotations"
     },
     {
       "path": "src/mds_client/client.py",
-      "sha": "add68401371409b2",
+      "sha": "f84ecc4933fa7330",
       "summary": "from __future__ import annotations"
     },
     {
@@ -83,7 +83,7 @@
     },
     {
       "path": "src/mds_client/sql.py",
-      "sha": "71ddc1a43ab9c326",
+      "sha": "54f3813861074f88",
       "summary": "from __future__ import annotations"
     },
     {
@@ -93,8 +93,8 @@
     },
     {
       "path": "src/mds_client/__init__.py",
-      "sha": "c9a313a3c25a54b0",
-      "summary": "from .client import MDS"
+      "sha": "281df2972437bf2c",
+      "summary": "from .client import MDS, MDSConfig"
     },
     {
       "path": "migrations/env.py",

@@ -1,82 +1,101 @@
 from __future__ import annotations
 
 import asyncio
-import gzip
 import json
-import sys
 from datetime import datetime
 from typing import Optional
 
 import typer
 
-from .client import MDS
-from .aclient import AMDS
-from .batch import BatchProcessor, AsyncBatchProcessor, BatchConfig
+from . import MDS, AMDS, BatchProcessor, AsyncBatchProcessor, BatchConfig
 from .models import Bar, Fundamentals, News, OptionSnap
+from .utils import iter_ndjson, coerce_model
 
-app = typer.Typer(help="Market Data Store (mds_client) operational CLI")
+app = typer.Typer(help="mds_client operational CLI")
 
-
-# ---------- helpers ----------
-
-
-def _mk_mds(dsn: str, tenant_id: Optional[str]) -> MDS:
-    cfg: dict = {"dsn": dsn}
-    if tenant_id:
-        cfg["tenant_id"] = tenant_id
-    return MDS(cfg)
+# ---------------------------
+# Common options
+# ---------------------------
 
 
-def _mk_amds(dsn: str, tenant_id: Optional[str], pool_max: int) -> AMDS:
-    cfg: dict = {"dsn": dsn, "pool_max": pool_max}
-    if tenant_id:
-        cfg["tenant_id"] = tenant_id
-    return AMDS(cfg)
+def dsn_opt() -> str:
+    return typer.Option(..., "--dsn", envvar="MDS_DSN", help="PostgreSQL DSN")
 
 
-def _parse_csv(s: str) -> list[str]:
-    return [x.strip() for x in s.split(",") if x.strip()]
+def tenant_opt() -> str:
+    return typer.Option(..., "--tenant-id", envvar="MDS_TENANT_ID", help="Tenant UUID for RLS")
 
 
-def _echo(obj) -> None:
-    typer.echo(json.dumps(obj, default=str))
+def vendor_opt() -> Optional[str]:
+    return typer.Option(None, "--vendor", help="Data vendor (e.g. ibkr, reuters)")
 
 
-# ---------- connectivity ----------
+def max_rows_opt(default=1000) -> int:
+    return typer.Option(default, "--max-rows", help="Flush when pending rows reach this size")
+
+
+def max_ms_opt(default=5000) -> int:
+    return typer.Option(default, "--max-ms", help="Flush when this many ms elapse since last flush")
+
+
+def max_bytes_opt(default=1_048_576) -> int:
+    return typer.Option(default, "--max-bytes", help="Flush when pending bytes reach this size")
+
+
+# ---------------------------
+# Health / Schema / Reads
+# ---------------------------
 
 
 @app.command("ping")
-def ping(dsn: str, tenant_id: Optional[str] = typer.Option(None)):
-    mds = _mk_mds(dsn, tenant_id)
+def ping(dsn: str = dsn_opt(), tenant_id: str = tenant_opt()):
+    mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
     ok = mds.health()
-    _echo({"ok": ok})
+    typer.echo(json.dumps({"ok": ok}, indent=2))
 
 
 @app.command("schema-version")
-def schema_version(dsn: str):
-    mds = _mk_mds(dsn, None)
-    _echo({"schema_version": mds.schema_version()})
+def schema_version(dsn: str = dsn_opt(), tenant_id: str = tenant_opt()):
+    mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
+    ver = mds.schema_version()
+    typer.echo(json.dumps({"schema_version": ver}, indent=2))
 
 
-# ---------- writes (sync) ----------
+@app.command("latest-prices")
+def latest_prices(
+    symbols: str = typer.Argument(..., help="Comma-separated symbols"),
+    vendor: str = typer.Option(..., "--vendor", help="Data vendor"),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
+):
+    mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
+    syms = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    rows = mds.latest_prices(syms, vendor=vendor)
+    for r in rows:
+        typer.echo(json.dumps(r.model_dump(), default=str))
+
+
+# ---------------------------
+# Write commands (sync)
+# ---------------------------
 
 
 @app.command("write-bar")
 def write_bar(
-    dsn: str,
-    tenant_id: str,
-    vendor: str,
-    symbol: str,
-    timeframe: str,
-    ts: datetime,
-    open_price: Optional[float] = None,
-    high_price: Optional[float] = None,
-    low_price: Optional[float] = None,
-    close_price: Optional[float] = None,
-    volume: Optional[int] = None,
+    symbol: str = typer.Option(...),
+    timeframe: str = typer.Option(...),
+    ts: datetime = typer.Option(..., formats=["%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z"]),
+    close_price: Optional[float] = typer.Option(None),
+    open_price: Optional[float] = typer.Option(None),
+    high_price: Optional[float] = typer.Option(None),
+    low_price: Optional[float] = typer.Option(None),
+    volume: Optional[int] = typer.Option(None),
+    vendor: str = typer.Option(..., "--vendor"),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
 ):
-    mds = _mk_mds(dsn, tenant_id)
-    row = Bar(
+    mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
+    bar = Bar(
         tenant_id=tenant_id,
         vendor=vendor,
         symbol=symbol,
@@ -88,23 +107,25 @@ def write_bar(
         close_price=close_price,
         volume=volume,
     )
-    mds.upsert_bars([row])
-    _echo({"upserted": 1})
+    mds.upsert_bars([bar])
+    typer.echo("ok")
 
 
 @app.command("write-fundamental")
 def write_fundamental(
-    dsn: str,
-    tenant_id: str,
-    vendor: str,
-    symbol: str,
-    asof: datetime,
-    total_assets: Optional[float] = None,
-    total_liabilities: Optional[float] = None,
-    net_income: Optional[float] = None,
-    eps: Optional[float] = None,
+    symbol: str = typer.Option(...),
+    asof: datetime = typer.Option(
+        ..., formats=["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z"]
+    ),
+    total_assets: Optional[float] = typer.Option(None),
+    total_liabilities: Optional[float] = typer.Option(None),
+    net_income: Optional[float] = typer.Option(None),
+    eps: Optional[float] = typer.Option(None),
+    vendor: str = typer.Option(..., "--vendor"),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
 ):
-    mds = _mk_mds(dsn, tenant_id)
+    mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
     row = Fundamentals(
         tenant_id=tenant_id,
         vendor=vendor,
@@ -116,21 +137,23 @@ def write_fundamental(
         eps=eps,
     )
     mds.upsert_fundamentals([row])
-    _echo({"upserted": 1})
+    typer.echo("ok")
 
 
 @app.command("write-news")
 def write_news(
-    dsn: str,
-    tenant_id: str,
-    vendor: str,
-    title: str,
-    published_at: datetime,
-    symbol: Optional[str] = None,
-    url: Optional[str] = None,
-    sentiment_score: Optional[float] = None,
+    title: str = typer.Option(...),
+    published_at: datetime = typer.Option(
+        ..., formats=["%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z"]
+    ),
+    symbol: Optional[str] = typer.Option(None),
+    url: Optional[str] = typer.Option(None),
+    sentiment_score: Optional[float] = typer.Option(None),
+    vendor: str = typer.Option(..., "--vendor"),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
 ):
-    mds = _mk_mds(dsn, tenant_id)
+    mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
     row = News(
         tenant_id=tenant_id,
         vendor=vendor,
@@ -141,32 +164,35 @@ def write_news(
         sentiment_score=sentiment_score,
     )
     mds.upsert_news([row])
-    _echo({"upserted": 1})
+    typer.echo("ok")
 
 
 @app.command("write-option")
 def write_option(
-    dsn: str,
-    tenant_id: str,
-    vendor: str,
-    symbol: str,
-    expiry: datetime,  # you can change to date in typer if you prefer
-    option_type: str,
-    strike: float,
-    ts: datetime,
-    iv: Optional[float] = None,
-    delta: Optional[float] = None,
-    gamma: Optional[float] = None,
-    oi: Optional[int] = None,
-    volume: Optional[int] = None,
-    spot: Optional[float] = None,
+    symbol: str = typer.Option(...),
+    expiry: str = typer.Option(..., help="YYYY-MM-DD"),
+    option_type: str = typer.Option(..., help="'C' or 'P'"),
+    strike: float = typer.Option(...),
+    ts: datetime = typer.Option(..., formats=["%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z"]),
+    iv: Optional[float] = typer.Option(None),
+    delta: Optional[float] = typer.Option(None),
+    gamma: Optional[float] = typer.Option(None),
+    oi: Optional[int] = typer.Option(None),
+    volume: Optional[int] = typer.Option(None),
+    spot: Optional[float] = typer.Option(None),
+    vendor: str = typer.Option(..., "--vendor"),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
 ):
-    mds = _mk_mds(dsn, tenant_id)
+    from datetime import date
+
+    y, m, d = [int(x) for x in expiry.split("-")]
+    mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
     row = OptionSnap(
         tenant_id=tenant_id,
         vendor=vendor,
         symbol=symbol,
-        expiry=expiry.date(),
+        expiry=date(y, m, d),
         option_type=option_type,
         strike=strike,
         ts=ts,
@@ -178,161 +204,110 @@ def write_option(
         spot=spot,
     )
     mds.upsert_options([row])
-    _echo({"upserted": 1})
+    typer.echo("ok")
 
 
-# ---------- reads (sync) ----------
-
-
-@app.command("latest-prices")
-def latest_prices(
-    dsn: str,
-    vendor: str,
-    symbols: str = typer.Argument(..., help="CSV list: e.g. AAPL,MSFT,SPY"),
-    tenant_id: Optional[str] = typer.Option(None),
-):
-    mds = _mk_mds(dsn, tenant_id)
-    rows = mds.latest_prices(_parse_csv(symbols), vendor=vendor)
-    _echo([r.model_dump() for r in rows])
-
-
-# ---------- ingest NDJSON (sync) ----------
+# ---------------------------
+# NDJSON ingest
+# ---------------------------
 
 
 @app.command("ingest-ndjson")
 def ingest_ndjson(
-    kind: str = typer.Argument(..., help="one of: bars|fundamentals|news|options"),
-    path: str = typer.Argument(..., help="NDJSON file path or '-' for stdin (.gz supported)"),
-    dsn: str = typer.Option(..., help="PostgreSQL DSN"),
-    tenant_id: str = typer.Option(..., help="Tenant UUID"),
-    max_rows: int = 1000,
-    max_ms: int = 5000,
-    max_bytes: int = 1_048_576,
+    kind: str = typer.Argument(..., help="bars|fundamentals|news|options"),
+    path: str = typer.Argument(..., help="File path or '-' for stdin (.gz ok)"),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
+    max_rows: int = max_rows_opt(1000),
+    max_ms: int = max_ms_opt(5000),
+    max_bytes: int = max_bytes_opt(1_048_576),
 ):
-    mds = _mk_mds(dsn, tenant_id)
+    kind_l = kind.lower()
+    if kind_l not in ("bars", "fundamentals", "news", "options"):
+        raise typer.BadParameter("kind must be one of: bars, fundamentals, news, options")
+
     cfg = BatchConfig(max_rows=max_rows, max_ms=max_ms, max_bytes=max_bytes)
+    mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
     bp = BatchProcessor(mds, cfg)
 
-    model_map = {
-        "bars": Bar,
-        "fundamentals": Fundamentals,
-        "news": News,
-        "options": OptionSnap,
-    }
-    factory = model_map.get(kind.lower())
-    if not factory:
-        raise typer.BadParameter("kind must be one of: bars|fundamentals|news|options")
+    add_fn = {
+        "bars": bp.add_bar,
+        "fundamentals": bp.add_fundamental,
+        "news": bp.add_news,
+        "options": bp.add_option,
+    }[kind_l]
 
-    if path == "-":
-        fh = sys.stdin
-        close_needed = False
-    elif path.endswith(".gz"):
-        fh = gzip.open(path, "rt", encoding="utf-8")
-        close_needed = True
-    else:
-        fh = open(path, "r", encoding="utf-8")
-        close_needed = True
+    n = 0
+    for obj in iter_ndjson(path):
+        row = coerce_model(kind_l, obj)
+        add_fn(row)
+        n += 1
 
-    count = 0
-    try:
-        for line in fh:
-            s = line.strip()
-            if not s:
-                continue
-            obj = factory.model_validate_json(s)
-            if kind == "bars":
-                bp.add_bar(obj)  # type: ignore[arg-type]
-            elif kind == "fundamentals":
-                bp.add_fundamental(obj)  # type: ignore[arg-type]
-            elif kind == "news":
-                bp.add_news(obj)  # type: ignore[arg-type]
-            else:
-                bp.add_option(obj)  # type: ignore[arg-type]
-            count += 1
-        bp.flush()
-    finally:
-        if close_needed:
-            fh.close()
-
-    _echo({"ingested": count})
-
-
-# ---------- ingest NDJSON (async) ----------
-
-
-async def _ingest_ndjson_async_impl(
-    kind: str,
-    path: str,
-    amds: AMDS,
-    cfg: BatchConfig,
-) -> int:
-    model_map = {
-        "bars": Bar,
-        "fundamentals": Fundamentals,
-        "news": News,
-        "options": OptionSnap,
-    }
-    factory = model_map.get(kind.lower())
-    if not factory:
-        raise typer.BadParameter("kind must be one of: bars|fundamentals|news|options")
-
-    if path == "-":
-        fh = sys.stdin
-        close_needed = False
-    elif path.endswith(".gz"):
-        fh = gzip.open(path, "rt", encoding="utf-8")
-        close_needed = True
-    else:
-        fh = open(path, "r", encoding="utf-8")
-        close_needed = True
-
-    count = 0
-    try:
-        async with AsyncBatchProcessor(amds, cfg) as bp:
-            for line in fh:
-                s = line.strip()
-                if not s:
-                    continue
-                obj = factory.model_validate_json(s)
-                if kind == "bars":
-                    await bp.add_bar(obj)  # type: ignore[arg-type]
-                elif kind == "fundamentals":
-                    await bp.add_fundamental(obj)  # type: ignore[arg-type]
-                elif kind == "news":
-                    await bp.add_news(obj)  # type: ignore[arg-type]
-                else:
-                    await bp.add_option(obj)  # type: ignore[arg-type]
-                count += 1
-    finally:
-        if close_needed:
-            fh.close()
-
-    return count
+    counts = bp.flush()
+    typer.echo(json.dumps({"ingested": n, "flushed": counts}, default=str, indent=2))
 
 
 @app.command("ingest-ndjson-async")
 def ingest_ndjson_async(
-    kind: str = typer.Argument(..., help="one of: bars|fundamentals|news|options"),
-    path: str = typer.Argument(..., help="NDJSON file path or '-' for stdin (.gz supported)"),
-    dsn: str = typer.Option(..., help="PostgreSQL DSN"),
-    tenant_id: str = typer.Option(..., help="Tenant UUID"),
-    pool_max: int = 10,
-    max_rows: int = 1000,
-    max_ms: int = 5000,
-    max_bytes: int = 1_048_576,
+    kind: str = typer.Argument(..., help="bars|fundamentals|news|options"),
+    path: str = typer.Argument(...),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
+    max_rows: int = max_rows_opt(1000),
+    max_ms: int = max_ms_opt(5000),
+    max_bytes: int = max_bytes_opt(1_048_576),
 ):
-    amds = _mk_amds(dsn, tenant_id, pool_max=pool_max)
+    asyncio.run(_ingest_ndjson_async(kind, path, dsn, tenant_id, max_rows, max_ms, max_bytes))
+
+
+async def _ingest_ndjson_async(
+    kind: str, path: str, dsn: str, tenant_id: str, max_rows: int, max_ms: int, max_bytes: int
+):
+    kind_l = kind.lower()
+    if kind_l not in ("bars", "fundamentals", "news", "options"):
+        raise typer.BadParameter("kind must be one of: bars, fundamentals, news, options")
+
     cfg = BatchConfig(max_rows=max_rows, max_ms=max_ms, max_bytes=max_bytes)
-    total = asyncio.run(_ingest_ndjson_async_impl(kind, path, amds, cfg))
-    _echo({"ingested": total})
+    amds = AMDS({"dsn": dsn, "tenant_id": tenant_id, "pool_max": 10})
+    async with AsyncBatchProcessor(amds, cfg) as bp:
+        add_fn = {
+            "bars": bp.add_bar,
+            "fundamentals": bp.add_fundamental,
+            "news": bp.add_news,
+            "options": bp.add_option,
+        }[kind_l]
+        n = 0
+        for obj in iter_ndjson(path):
+            await add_fn(coerce_model(kind_l, obj))
+            n += 1
+    # Auto-flush on exit
+    typer.echo(json.dumps({"ingested": n, "flushed": "auto"}, default=str, indent=2))
 
 
-# ---------- entry ----------
+# ---------------------------
+# Jobs outbox (simple helper)
+# ---------------------------
 
 
-def main():
-    app()
+@app.command("enqueue-job")
+def enqueue_job(
+    idempotency_key: str = typer.Option(..., "--idempotency-key"),
+    job_type: str = typer.Option(..., "--job-type"),
+    payload: str = typer.Option(..., "--payload", help="JSON string"),
+    priority: str = typer.Option("medium", "--priority"),
+    dsn: str = dsn_opt(),
+    tenant_id: str = tenant_opt(),
+):
+    """Minimal helper that inserts into jobs_outbox with conflict-free idempotency."""
+    mds = MDS({"dsn": dsn, "tenant_id": tenant_id})
+    mds.enqueue_job(
+        idempotency_key=idempotency_key,
+        job_type=job_type,
+        payload=json.loads(payload),
+        priority=priority,
+    )
+    typer.echo("ok")
 
 
 if __name__ == "__main__":
-    main()
+    app()

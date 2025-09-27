@@ -1,0 +1,12 @@
+psycopg[binary]>=3.1
+sqlalchemy>=2.0
+alembic>=1.13
+pydantic>=2.7
+loguru>=0.7
+python-dotenv>=1.0
+
+[dev]
+pytest<9,>=8.2
+ruff<1,>=0.6
+black<25,>=24.8
+mypy<2,>=1.11

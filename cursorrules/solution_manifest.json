@@ -47,6 +47,26 @@
       "summary": "from fastapi import FastAPI, Response, status, HTTPException, Depends, Request"
     },
     {
+      "path": "src/market_data_store/__init__.py",
+      "sha": "023f874016ca3ab3",
+      "summary": "\"\"\"Market Data Store - Persistence and CQRS-lite store for market data.\"\"\""
+    },
+    {
+      "path": "src/market_data_store/ingestion/__init__.py",
+      "sha": "e5c4fc27cb5767ad",
+      "summary": "\"\"\"Data ingestion module for market data store.\"\"\""
+    },
+    {
+      "path": "src/market_data_store/queries/__init__.py",
+      "sha": "ca4ebfe15c7c8465",
+      "summary": "\"\"\"Query module for market data store.\"\"\""
+    },
+    {
+      "path": "src/market_data_store/schema/__init__.py",
+      "sha": "3054019dad6d8784",
+      "summary": "\"\"\"Database schema module for market data store.\"\"\""
+    },
+    {
       "path": "src/mds_client/aclient.py",
       "sha": "fa0d34a0bc1745dc",
       "summary": "from __future__ import annotations"

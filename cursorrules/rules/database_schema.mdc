@@ -3,12 +3,19 @@ SCOPE
 - Core database schema, migrations, and CLI commands for market-data-store control-plane.
 
 DATABASE SCHEMA
-- Core tables: tenants (UUID PK, tenant_id unique), jobs_outbox (idempotency, job processing), api_config (JSONB settings)
+- Core tables: tenants (id UUID PK, tenant_id VARCHAR unique), jobs_outbox (idempotency, job processing), api_config (JSONB settings)
 - Fact tables: bars (OHLCV + timeframes), fundamentals (financial metrics), news (sentiment), options_snap (options chains)
 - Features: RLS policies for tenant isolation, updated_at triggers, optimized indexes, views (latest_prices, data_freshness, job_queue_health)
-- Multi-tenant: All fact tables have tenant_id FK with RLS policy using current_setting('app.tenant_id')::uuid
+- Multi-tenant: All fact tables have tenant_id FK → tenants.id (UUID) with RLS policy using current_setting('app.tenant_id')::uuid
 - TimescaleDB: Hypertables with time-first composite primary keys for optimal performance
 - Primary keys: Time-first composite keys (ts, tenant_id, vendor, symbol, timeframe) for TimescaleDB compatibility
+- CRITICAL: Foreign keys reference tenants.id (UUID), not tenants.tenant_id (VARCHAR)
+
+SCHEMA RELATIONSHIPS
+- tenants: id (UUID PK) ←── bars.tenant_id, fundamentals.tenant_id, news.tenant_id, options_snap.tenant_id
+- tenants: tenant_id (VARCHAR UNIQUE) - human-readable identifier
+- RLS: All fact tables use current_setting('app.tenant_id')::uuid for tenant isolation
+- Foreign Key Constraint: bars.tenant_id → tenants.id (NOT tenants.tenant_id)
 
 CLI COMMANDS
 - migrate [target]: Run Alembic migrations (default: head)

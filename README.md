@@ -238,7 +238,7 @@ The library provides strict Pydantic models for all market data types:
 #### [`Bar`](src/mds_client/models.py#L15-L35) - OHLCV Market Data
 ```python
 class Bar(BaseModel):
-    tenant_id: str                    # UUID for tenant isolation
+    tenant_id: str                    # UUID for tenant isolation (tenants.id)
     vendor: str                       # Data provider (e.g., "ibkr", "alpha_vantage")
     symbol: str                       # Trading symbol (auto-uppercased)
     timeframe: str                    # Time aggregation ("1m", "5m", "1h", "1d")
@@ -254,7 +254,7 @@ class Bar(BaseModel):
 #### [`Fundamentals`](src/mds_client/models.py#L38-L50) - Company Financials
 ```python
 class Fundamentals(BaseModel):
-    tenant_id: str
+    tenant_id: str                    # UUID for tenant isolation (tenants.id)
     vendor: str
     symbol: str
     asof: datetime                    # As-of date for financial data
@@ -268,7 +268,7 @@ class Fundamentals(BaseModel):
 #### [`News`](src/mds_client/models.py#L53-L66) - Market News & Sentiment
 ```python
 class News(BaseModel):
-    tenant_id: str
+    tenant_id: str                    # UUID for tenant isolation (tenants.id)
     vendor: str
     published_at: datetime            # Publication timestamp
     title: str                        # News headline
@@ -281,7 +281,7 @@ class News(BaseModel):
 #### [`OptionSnap`](src/mds_client/models.py#L69-L90) - Options Market Data
 ```python
 class OptionSnap(BaseModel):
-    tenant_id: str
+    tenant_id: str                    # UUID for tenant isolation (tenants.id)
     vendor: str
     symbol: str
     expiry: date                      # Option expiration date
@@ -300,7 +300,7 @@ class OptionSnap(BaseModel):
 #### [`LatestPrice`](src/mds_client/models.py#L93-L100) - Real-time Price Snapshots
 ```python
 class LatestPrice(BaseModel):
-    tenant_id: str
+    tenant_id: str                    # UUID for tenant isolation (tenants.id)
     vendor: str
     symbol: str
     price: float                      # Latest price
@@ -529,7 +529,7 @@ export MDS_COPY_MIN_ROWS=5000
 | Var | Meaning |
 |-----|---------|
 | `MDS_DSN` | PostgreSQL DSN |
-| `MDS_TENANT_ID` | Tenant UUID (RLS) |
+| `MDS_TENANT_ID` | Tenant UUID for RLS (must be tenants.id, not tenants.tenant_id) |
 | `MDS_WRITE_MODE` | `auto` \| `executemany` \| `values` \| `copy` |
 | `MDS_VALUES_MIN_ROWS` | Threshold for execute_values |
 | `MDS_COPY_MIN_ROWS` | Threshold for COPY |
@@ -539,6 +539,12 @@ export MDS_COPY_MIN_ROWS=5000
 - **`execute_values`**: Fast for mid-size batches (500-5000 rows), sync only
   - Install extras: `pip install "psycopg[pool,extras]"`
 - **`COPY`**: Fastest for large batches (5000+ rows), works with RLS and maintains idempotency
+
+#### Troubleshooting
+- **Tenant ID errors**: Use `tenants.id` (UUID), not `tenants.tenant_id` (VARCHAR)
+- **Windows async issues**: Use sync `MDS` client; async pools need `SelectorEventLoop`
+- **Foreign key violations**: Ensure tenant exists in `tenants` table with correct UUID
+- **RLS denied**: Verify `app.tenant_id` is set correctly in connection context
 
 ### 💾 Backup & Restore Operations
 

@@ -29,7 +29,12 @@ def dsn_opt() -> str:
 
 
 def tenant_opt() -> str:
-    return typer.Option(..., "--tenant-id", envvar="MDS_TENANT_ID", help="Tenant UUID for RLS")
+    return typer.Option(
+        ...,
+        "--tenant-id",
+        envvar="MDS_TENANT_ID",
+        help="Tenant UUID for RLS (tenants.id, not tenants.tenant_id)",
+    )
 
 
 def vendor_opt() -> Optional[str]:
@@ -78,7 +83,7 @@ def latest_prices(
     syms = [s.strip().upper() for s in symbols.split(",") if s.strip()]
     rows = mds.latest_prices(syms, vendor=vendor)
     for r in rows:
-        typer.echo(json.dumps(r.model_dump(), default=str))
+        typer.echo(json.dumps(r, default=str))
 
 
 # ---------------------------
@@ -402,9 +407,9 @@ async def _restore_csv_async_impl(
     try:
         n = await amds.copy_restore_csv_async(
             target=table,
-            cols=preset["cols"],
-            conflict_cols=preset["conflict"],
-            update_cols=preset["update"],
+            cols=preset.cols,
+            conflict_cols=preset.conflict,
+            update_cols=preset.update,
             src_path=str(src_path),
             csv_delimiter=delimiter,
             csv_has_header=header,

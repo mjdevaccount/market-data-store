@@ -215,47 +215,47 @@ class AMDS:
         ):
             await cp.write(sio.read())
 
-    async def _upsert(self, table: str, rows: Iterable[object]) -> int:
-        preset = TABLE_PRESETS[table]
-        cols, conflict, update = preset["cols"], preset["conflict"], preset["update"]
-        sql_stmt = upsert_statement(table, cols, conflict, update)
-        data = self._coerce_rows(rows)
-        if not data:
-            return 0
+        async def _upsert(self, table: str, rows: Iterable[object]) -> int:
+            preset = TABLE_PRESETS[table]
+            cols, conflict, update = preset.cols, preset.conflict, preset.update
+            sql_stmt = upsert_statement(table, cols, conflict, update)
+            data = self._coerce_rows(rows)
+            if not data:
+                return 0
 
-        async for conn in self._conn():
-            async with conn.cursor(row_factory=dict_row) as cur:
-                mode = self._write_mode(len(data))
-                if mode == "executemany":
-                    await cur.executemany(sql_stmt, data)
-                elif mode == "copy":
-                    temp = psql.Identifier(f"tmp_{table}_copy")
-                    await cur.execute(
-                        psql.SQL(
-                            "CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS) ON COMMIT DROP"
-                        ).format(temp, psql.Identifier(table))
-                    )
-                    await self._copy_from_memory_csv(conn, temp.string, cols, data)
-                    ins = psql.SQL(
-                        "INSERT INTO {} ({cols}) SELECT {cols} FROM {} "
-                        "ON CONFLICT ({conf}) DO UPDATE SET {upd}"
-                    ).format(
-                        psql.Identifier(table),
-                        temp,
-                        cols=psql.SQL(", ").join(psql.Identifier(c) for c in cols),
-                        conf=psql.SQL(", ").join(psql.Identifier(c) for c in conflict),
-                        upd=psql.SQL(", ").join(
-                            psql.SQL("{} = EXCLUDED.{}").format(
-                                psql.Identifier(c), psql.Identifier(c)
-                            )
-                            for c in update
-                        ),
-                    )
-                    await cur.execute(ins)
-                else:
-                    raise ValueError(f"unknown write_mode {mode}")
-            await conn.commit()
-        return len(data)
+            async for conn in self._conn():
+                async with conn.cursor(row_factory=dict_row) as cur:
+                    mode = self._write_mode(len(data))
+                    if mode == "executemany":
+                        await cur.executemany(sql_stmt, data)
+                    elif mode == "copy":
+                        temp = psql.Identifier(f"tmp_{table}_copy")
+                        await cur.execute(
+                            psql.SQL(
+                                "CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS) ON COMMIT DROP"
+                            ).format(temp, psql.Identifier(table))
+                        )
+                        await self._copy_from_memory_csv(conn, temp.string, cols, data)
+                        ins = psql.SQL(
+                            "INSERT INTO {} ({cols}) SELECT {cols} FROM {} "
+                            "ON CONFLICT ({conf}) DO UPDATE SET {upd}"
+                        ).format(
+                            psql.Identifier(table),
+                            temp,
+                            cols=psql.SQL(", ").join(psql.Identifier(c) for c in cols),
+                            conf=psql.SQL(", ").join(psql.Identifier(c) for c in conflict),
+                            upd=psql.SQL(", ").join(
+                                psql.SQL("{} = EXCLUDED.{}").format(
+                                    psql.Identifier(c), psql.Identifier(c)
+                                )
+                                for c in update
+                            ),
+                        )
+                        await cur.execute(ins)
+                    else:
+                        raise ValueError(f"unknown write_mode {mode}")
+                await conn.commit()
+            return len(data)
 
     # ---------- typed upserts ----------
 

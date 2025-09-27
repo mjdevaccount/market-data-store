@@ -15,6 +15,7 @@ CONTEXT INJECTION
 - Prefer @reference with small, targeted snippets.
 - Always reference database_schema.mdc for schema, CLI, and migration details.
 - For mds_client tasks, reference mds_client_library.mdc for client API details.
+- For tenant ID issues, reference docs/schema.md for foreign key relationships.
 
 STYLE
 - Python 3.11, FastAPI, Typer, SQLAlchemy 2.x, Alembic, psycopg 3, psycopg_pool.

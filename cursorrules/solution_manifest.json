@@ -28,7 +28,7 @@
     },
     {
       "path": "src/datastore/timescale_policies.py",
-      "sha": "03cf57593485a2bc",
+      "sha": "4fd105cf75d763d9",
       "summary": "from loguru import logger"
     },
     {
@@ -48,7 +48,7 @@
     },
     {
       "path": "src/mds_client/aclient.py",
-      "sha": "57c8472f618b4260",
+      "sha": "fa0d34a0bc1745dc",
       "summary": "from __future__ import annotations"
     },
     {
@@ -58,12 +58,12 @@
     },
     {
       "path": "src/mds_client/cli.py",
-      "sha": "ed71a27ccb38533d",
+      "sha": "308645995b5ab9e3",
       "summary": "from __future__ import annotations"
     },
     {
       "path": "src/mds_client/client.py",
-      "sha": "b298b6da56e72a57",
+      "sha": "77b59b64a5ded202",
       "summary": "from __future__ import annotations"
     },
     {
@@ -93,7 +93,7 @@
     },
     {
       "path": "src/mds_client/__init__.py",
-      "sha": "e59b0a1f9861e5d7",
+      "sha": "82d6502a1ebb4230",
       "summary": "from .client import MDS, MDSConfig"
     },
     {
@@ -118,7 +118,7 @@
     },
     {
       "path": "cursorrules/index.mdc",
-      "sha": "530cd251a7184399",
+      "sha": "6ec7d6f3372bfbb4",
       "summary": "# Always-Active Rules (market-data-store)"
     },
     {
@@ -143,7 +143,7 @@
     },
     {
       "path": "cursorrules/rules/database_schema.mdc",
-      "sha": "ba5553fc9de78ccc",
+      "sha": "cc8bc53013ee43ab",
       "summary": "# Rule: Database Schema & CLI"
     },
     {
@@ -158,7 +158,7 @@
     },
     {
       "path": "cursorrules/rules/mds_client_library.mdc",
-      "sha": "03ec409b8686fe8a",
+      "sha": "1f03c93559996fb4",
       "summary": "# Rule: MDS Client Library"
     },
     {

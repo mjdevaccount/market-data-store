@@ -47,6 +47,13 @@ ENVIRONMENT VARIABLES
 - MDS_VALUES_MIN_ROWS: Threshold for execute_values
 - MDS_COPY_MIN_ROWS: Threshold for COPY
 
+TROUBLESHOOTING
+- Tenant ID errors: Use tenants.id (UUID), not tenants.tenant_id (VARCHAR)
+- Windows async issues: Use sync MDS client, async pools need SelectorEventLoop
+- Foreign key violations: Ensure tenant exists in tenants table with correct UUID
+- RLS denied: Verify app.tenant_id is set correctly in connection context
+- Performance issues: Tune write mode thresholds based on data patterns
+
 CONTEXT
 - @reference src/mds_client/__init__.py
 - @reference src/mds_client/client.py

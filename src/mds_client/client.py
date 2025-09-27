@@ -186,12 +186,12 @@ class MDS:
             if r is None:
                 continue
             if hasattr(r, "model_dump"):
-                out.append(r.model_dump(exclude_none=True))
+                out.append(r.model_dump())
             elif isinstance(r, dict):
-                out.append({k: v for k, v in r.items() if v is not None})
+                out.append(r)
             else:
                 # Fallback to __dict__
-                out.append({k: v for k, v in vars(r).items() if v is not None})
+                out.append(vars(r))
         return out
 
     def _write_mode(self, nrows: int) -> str:
@@ -230,7 +230,7 @@ class MDS:
         rows: Iterable[object],
     ) -> int:
         preset = TABLE_PRESETS[table]
-        cols, conflict, update = preset["cols"], preset["conflict"], preset["update"]
+        cols, conflict, update = preset.cols, preset.conflict, preset.update
         sql_stmt = upsert_statement(table, cols, conflict, update)
         data = self._coerce_rows(rows)
         if not data:
@@ -445,10 +445,10 @@ class MDS:
         preset = TABLE_PRESETS[table]
         return build_ndjson_select(
             table,
-            preset["cols"],
             vendor=vendor,
             symbol=symbol,
             timeframe=timeframe,
             start=start,
             end=end,
+            cols=preset.cols,
         )

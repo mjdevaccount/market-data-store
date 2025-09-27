@@ -24,7 +24,7 @@ SELECT EXISTS (
   FROM pg_class c
   JOIN pg_namespace n ON n.oid = c.relnamespace
   JOIN pg_catalog.pg_policies p ON p.schemaname = n.nspname AND p.tablename = c.relname
-  WHERE n.nspname='public' AND c.relname = %s
+  WHERE n.nspname='public' AND c.relname = :table
 );
 """
 
@@ -54,7 +54,7 @@ def apply_compression(engine: Engine) -> None:
         return
     with engine.begin() as conn:
         for table, interval in COMPRESSION_POLICIES:
-            rls_exists = conn.execute(text(RLS_CHECK), (table,)).scalar()
+            rls_exists = conn.execute(text(RLS_CHECK), {"table": table}).scalar()
             if rls_exists:
                 # log and skip
                 logger.warning(f"Skipping compression on {table} (RLS enabled).")

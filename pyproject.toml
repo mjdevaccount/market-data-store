@@ -1,5 +1,5 @@
 [project]
-name = "datastore"
+name = "market-data-store"
 version = "0.1.0"
 description = "Data store control-plane (schema, migrations, policies, ops) for market-data."
 readme = "README.md"

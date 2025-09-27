@@ -50,16 +50,16 @@ Below is a snapshot of the repo's structure with logical groupings to help new c
 │   └── service/                   # FastAPI service layer
 │       └── app.py                 # FastAPI app with admin endpoints
 └── src/mds_client/                # Client library for Market Data Core
-    ├── __init__.py                # Library exports (MDS, AMDS, models)
-    ├── client.py                  # MDS (sync client facade)
-    ├── aclient.py                 # AMDS (async client facade)
-    ├── models.py                  # Pydantic data models
-    ├── sql.py                     # SQL statements with conflict resolution
-    ├── rls.py                     # Row Level Security helpers
-    ├── errors.py                  # Structured exception hierarchy
-    ├── utils.py                   # Time/size helpers, batch utilities
-    ├── batch.py                   # High-throughput batch processing
-    └── cli.py                     # Operational CLI commands
+    ├── __init__.py                # Library exports (MDS, AMDS, models, batch processors)
+    ├── client.py                  # MDS (sync client facade) with psycopg 3 + ConnectionPool
+    ├── aclient.py                 # AMDS (async client facade) with AsyncConnectionPool
+    ├── models.py                  # Pydantic data models with validation
+    ├── sql.py                     # Canonical SQL with named parameters and ON CONFLICT upserts
+    ├── rls.py                     # Row Level Security helpers (DSN options + context managers)
+    ├── errors.py                  # Structured exception hierarchy with psycopg error mapping
+    ├── utils.py                   # NDJSON processing with gzip support and model coercion
+    ├── batch.py                   # Production-safe batch processing (sync + async)
+    └── cli.py                     # Comprehensive operational CLI with environment variables
 ```
 
 ### 🤖 **Automation Rules**
@@ -181,6 +181,11 @@ mds write-bar --dsn "..." --tenant-id "uuid" --vendor "ibkr" \
 
 # Get latest prices
 mds latest-prices --dsn "..." --vendor "ibkr" --symbols "AAPL,MSFT"
+
+# Environment variable support
+export MDS_DSN="postgresql://user:pass@host:port/db"
+export MDS_TENANT_ID="uuid-string"
+mds ping  # Uses env vars automatically
 ```
 
 ## 📚 Client Library Documentation
@@ -193,11 +198,12 @@ The `mds_client` library provides a production-ready Python client for Market Da
 - **`AMDS`** - Asynchronous client for high-performance Market Data Core
 
 Both clients support:
-- **Row Level Security (RLS)** with tenant isolation
-- **Connection pooling** with psycopg 3
-- **TimescaleDB integration** with time-first composite primary keys
-- **Idempotent upserts** with conflict resolution
-- **Structured error handling** with retry logic
+- **Row Level Security (RLS)** with tenant isolation via DSN options or context managers
+- **Connection pooling** with psycopg 3 + psycopg_pool (ConnectionPool/AsyncConnectionPool)
+- **TimescaleDB integration** with time-first composite primary keys and idempotent upserts
+- **Statement timeouts** with per-connection configuration
+- **Structured error handling** with psycopg error mapping and retry logic
+- **Job outbox pattern** with idempotency key support
 
 ### 📊 Data Models
 
@@ -277,18 +283,26 @@ class LatestPrice(BaseModel):
 
 ### 🔧 Configuration
 
-#### [`MDSConfig`](src/mds_client/client.py#L18-L28) - Client Configuration
+#### Client Configuration
 ```python
-class MDSConfig(TypedDict, total=False):
-    dsn: str                          # PostgreSQL connection string
-    tenant_id: str                    # UUID for tenant isolation
-    app_name: str                     # Application name for pg_stat_activity
-    connect_timeout: float            # Connection timeout in seconds
-    statement_timeout_ms: int         # Query timeout in milliseconds
-    pool_min: int                     # Minimum connections in pool
-    pool_max: int                      # Maximum connections in pool
-    max_batch_rows: int               # Batch size for high-throughput writes
-    max_batch_ms: int                 # Batch flush interval in milliseconds
+# MDS (sync) configuration
+mds = MDS({
+    "dsn": "postgresql://user:pass@host:port/db?options=-c%20app.tenant_id%3D<uuid>",
+    "tenant_id": "uuid-string",        # Optional: overrides DSN tenant_id
+    "app_name": "mds_client",          # Application name for pg_stat_activity
+    "connect_timeout": 10.0,           # Connection timeout in seconds
+    "statement_timeout_ms": 30000,     # Query timeout in milliseconds
+    "pool_min": 1,                     # Minimum connections in pool
+    "pool_max": 10,                    # Maximum connections in pool
+})
+
+# AMDS (async) configuration
+amds = AMDS({
+    "dsn": "postgresql://user:pass@host:port/db",
+    "tenant_id": "uuid-string",
+    "app_name": "mds_client_async",
+    "pool_max": 10,                    # Async pool typically larger
+})
 ```
 
 ### 🚀 API Reference
@@ -296,29 +310,37 @@ class MDSConfig(TypedDict, total=False):
 #### Synchronous Client (`MDS`)
 
 **Connection & Health:**
-- [`health()`](src/mds_client/client.py#L52-L58) - Check database connectivity
-- [`schema_version()`](src/mds_client/client.py#L60-L68) - Get current schema version
-- [`tenant(tenant_id)`](src/mds_client/client.py#L49-L50) - Get tenant context for RLS
+- [`health()`](src/mds_client/client.py) - Check database connectivity
+- [`schema_version()`](src/mds_client/client.py) - Get current schema version
+- [`close()`](src/mds_client/client.py) - Close connection pool
 
 **Write Operations (Idempotent Upserts):**
-- [`upsert_bars(rows: list[Bar])`](src/mds_client/client.py#L71-L83) - Insert/update OHLCV data
-- [`upsert_fundamentals(rows: list[Fundamentals])`](src/mds_client/client.py#L85-L97) - Insert/update financial data
-- [`upsert_news(rows: list[News])`](src/mds_client/client.py#L99-L111) - Insert/update news data
-- [`upsert_options(rows: list[OptionSnap])`](src/mds_client/client.py#L113-L125) - Insert/update options data
+- [`upsert_bars(rows: Sequence[Bar])`](src/mds_client/client.py) - Insert/update OHLCV data with time-first PKs
+- [`upsert_fundamentals(rows: Sequence[Fundamentals])`](src/mds_client/client.py) - Insert/update financial data
+- [`upsert_news(rows: Sequence[News])`](src/mds_client/client.py) - Insert/update news data (auto-generates UUID if missing)
+- [`upsert_options(rows: Sequence[OptionSnap])`](src/mds_client/client.py) - Insert/update options data
 
 **Read Operations:**
-- [`latest_prices(symbols: list[str], vendor: str)`](src/mds_client/client.py#L128-L138) - Get latest prices for symbols
-- [`bars_window(symbol, timeframe, start, end, vendor)`](src/mds_client/client.py#L140-L154) - Get bars in time window
+- [`latest_prices(symbols: Sequence[str], vendor: str)`](src/mds_client/client.py) - Get latest prices for symbols
+- [`bars_window(symbol, timeframe, start, end, vendor)`](src/mds_client/client.py) - Get bars in time window
+
+**Job Operations:**
+- [`enqueue_job(idempotency_key, job_type, payload, priority)`](src/mds_client/client.py) - Enqueue job with idempotency
 
 #### Asynchronous Client (`AMDS`)
 
 The async client provides identical methods with `async`/`await` syntax:
 
-- [`async health()`](src/mds_client/aclient.py#L40-L46) - Async health check
-- [`async schema_version()`](src/mds_client/aclient.py#L48-L56) - Async schema version
-- [`async upsert_bars(rows)`](src/mds_client/aclient.py#L59-L71) - Async bar upserts
-- [`async latest_prices(symbols, vendor)`](src/mds_client/aclient.py#L120-L130) - Async price queries
-- And all other methods with async equivalents...
+- [`async health()`](src/mds_client/aclient.py) - Async health check
+- [`async schema_version()`](src/mds_client/aclient.py) - Async schema version
+- [`async aclose()`](src/mds_client/aclient.py) - Close async connection pool
+- [`async upsert_bars(rows)`](src/mds_client/aclient.py) - Async bar upserts
+- [`async upsert_fundamentals(rows)`](src/mds_client/aclient.py) - Async fundamentals upserts
+- [`async upsert_news(rows)`](src/mds_client/aclient.py) - Async news upserts
+- [`async upsert_options(rows)`](src/mds_client/aclient.py) - Async options upserts
+- [`async latest_prices(symbols, vendor)`](src/mds_client/aclient.py) - Async price queries
+- [`async bars_window(symbol, timeframe, start, end, vendor)`](src/mds_client/aclient.py) - Async bar queries
+- [`async enqueue_job(...)`](src/mds_client/aclient.py) - Async job enqueueing
 
 ### 🔒 Row Level Security (RLS)
 
@@ -333,21 +355,22 @@ mds = MDS({"dsn": dsn})
 
 #### Context Manager (Fallback)
 ```python
-# Explicit tenant context for operations
-with mds.tenant("tenant-uuid") as ctx:
-    # All operations use this tenant context
-    ctx.cursor().execute("SELECT * FROM bars")
+# Explicit tenant context for operations (if not using DSN options)
+# Note: Current implementation uses SET app.tenant_id per connection
+# Context managers would be implemented in rls.py if needed
 ```
 
 ### ⚠️ Error Handling
 
 The library provides structured error handling with automatic retry logic:
 
-#### [`MDSOperationalError`](src/mds_client/errors.py#L7-L9) - Base operational error
-#### [`RetryableError`](src/mds_client/errors.py#L11-L13) - Temporary errors (network, deadlocks)
-#### [`ConstraintViolation`](src/mds_client/errors.py#L15-L17) - Database constraint violations
-#### [`RLSDenied`](src/mds_client/errors.py#L19-L21) - Row Level Security policy violations
-#### [`TimeoutExceeded`](src/mds_client/errors.py#L23-L25) - Query or connection timeouts
+#### [`MDSOperationalError`](src/mds_client/errors.py) - Base operational error
+#### [`RetryableError`](src/mds_client/errors.py) - Temporary errors (network, deadlocks, serialization failures)
+#### [`ConstraintViolation`](src/mds_client/errors.py) - Database constraint violations (unique, foreign key, check)
+#### [`RLSDenied`](src/mds_client/errors.py) - Row Level Security policy violations
+#### [`TimeoutExceeded`](src/mds_client/errors.py) - Query or connection timeouts
+
+All errors are automatically mapped from `psycopg.errors` exceptions for precise error handling.
 
 ### 🛠️ Operational CLI
 
@@ -426,12 +449,15 @@ async with AsyncBatchProcessor(amds, BatchConfig(max_rows=1000, max_ms=5000)) as
 ```
 
 ### Key Features
-- **Dual API**: Sync (`MDS`) and async (`AMDS`) facades
-- **RLS Integration**: Automatic tenant isolation via DSN options
-- **TimescaleDB Compatible**: Composite primary keys with time columns first
-- **Connection Pooling**: Production-ready with psycopg 3
-- **Batch Processing**: High-throughput ingestion with size/time-based flushing
-- **Structured Errors**: Comprehensive exception hierarchy with retry logic
+- **Dual API**: Sync (`MDS`) and async (`AMDS`) facades with identical interfaces
+- **RLS Integration**: Automatic tenant isolation via DSN options or per-connection SET
+- **TimescaleDB Compatible**: Time-first composite primary keys with idempotent upserts
+- **Connection Pooling**: Production-ready with psycopg 3 + psycopg_pool
+- **Batch Processing**: High-throughput ingestion with byte-accurate sizing and auto-flush tickers
+- **Structured Errors**: Comprehensive exception hierarchy with psycopg error mapping
+- **Environment Variables**: CLI support for MDS_DSN and MDS_TENANT_ID
+- **NDJSON Support**: Gzip compression, stdin input, and model coercion
+- **Job Outbox**: Idempotent job enqueueing with conflict-free guarantees
 
 ### Dependencies
 

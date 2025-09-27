@@ -1,109 +1,183 @@
 from __future__ import annotations
-from typing import Iterable, TypedDict, Optional, List
+
+import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import Iterable, Optional, Sequence
+
+import psycopg
 from psycopg_pool import ConnectionPool
+
 from .models import Bar, Fundamentals, News, OptionSnap, LatestPrice
-from .rls import ensure_tenant_in_dsn
-from .errors import map_db_error
-from .sql import SQL
+from . import sql as q
+
+try:
+    from .errors import (
+        MDSOperationalError,
+        RetryableError,
+        ConstraintViolation,
+        RLSDenied,
+        TimeoutExceeded,
+    )
+except Exception:  # minimal fallback
+
+    class MDSOperationalError(Exception): ...
+
+    class RetryableError(MDSOperationalError): ...
+
+    class ConstraintViolation(MDSOperationalError): ...
+
+    class RLSDenied(MDSOperationalError): ...
+
+    class TimeoutExceeded(MDSOperationalError): ...
 
 
-class MDSConfig(TypedDict, total=False):
+@dataclass
+class _Cfg:
     dsn: str
-    tenant_id: str
-    app_name: str
-    connect_timeout: float
-    statement_timeout_ms: int
-    pool_min: int
-    pool_max: int
+    tenant_id: Optional[str] = None
+    app_name: Optional[str] = "mds_client"
+    connect_timeout: float = 10.0
+    statement_timeout_ms: Optional[int] = None
+    pool_min: int = 1
+    pool_max: int = 10
 
 
 class MDS:
-    def __init__(self, cfg: MDSConfig):
-        dsn = cfg["dsn"]
-        dsn = ensure_tenant_in_dsn(dsn, cfg.get("tenant_id"))
+    def __init__(self, config: dict):
+        c = _Cfg(**config)
+        self._cfg = c
+        # You can pass options in DSN too; timeout controlled by server param/SET below
         self._pool = ConnectionPool(
-            dsn,
-            min_size=int(cfg.get("pool_min", 1)),
-            max_size=int(cfg.get("pool_max", 10)),
-            kwargs={"autocommit": False},
+            conninfo=c.dsn,
+            min_size=c.pool_min,
+            max_size=c.pool_max,
+            timeout=c.connect_timeout,
+            kwargs={},  # leave defaults (autocommit False)
         )
-        self._stmt_timeout_ms = int(cfg.get("statement_timeout_ms", 0))
-        self._app_name = cfg.get("app_name", "mds_client")
+
+    def close(self) -> None:
+        self._pool.close()
+
+    # ---------- internal helpers ----------
 
     @contextmanager
     def _conn(self):
         with self._pool.connection() as conn:
+            # Per-connection session config
+            with conn.cursor() as cur:
+                if self._cfg.app_name:
+                    cur.execute("SET application_name = %s", (self._cfg.app_name,))
+                if self._cfg.statement_timeout_ms is not None:
+                    cur.execute(
+                        "SET statement_timeout = %s", (f"{self._cfg.statement_timeout_ms}ms",)
+                    )
+                if self._cfg.tenant_id:
+                    cur.execute("SET app.tenant_id = %s", (self._cfg.tenant_id,))
             try:
-                if self._stmt_timeout_ms:
-                    conn.execute(f"SET LOCAL statement_timeout = {self._stmt_timeout_ms}")
-                if self._app_name:
-                    conn.execute("SET LOCAL application_name = %s", (self._app_name,))
                 yield conn
                 conn.commit()
-            except Exception as e:
+            except Exception:
                 conn.rollback()
-                raise map_db_error(e)
+                raise
 
-    # ---------- Health / Meta
+    @staticmethod
+    def _dicts(rows: Iterable) -> list[dict]:
+        # pydantic v2
+        return [r.model_dump(mode="python") if hasattr(r, "model_dump") else r for r in rows]
+
+    # ---------- admin / health ----------
+
     def health(self) -> bool:
-        with self._conn() as c:
-            return c.execute("SELECT 1").fetchone() is not None
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute(q.HEALTH)
+            _ = cur.fetchone()
+            return True
 
     def schema_version(self) -> Optional[str]:
-        with self._conn() as c:
-            cur = c.execute("SELECT version_num FROM alembic_version LIMIT 1")
-            row = cur.fetchone()
-            return row[0] if row else None
+        with self._conn() as conn, conn.cursor() as cur:
+            try:
+                cur.execute(q.SCHEMA_VERSION)
+                row = cur.fetchone()
+                return row[0] if row else None
+            except psycopg.errors.UndefinedTable:
+                return None
 
-    # ---------- Writes (executemany)
-    def _execmany(self, q: str, params: Iterable[tuple]) -> int:
-        with self._conn() as c:
-            cur = c.cursor()
-            cur.executemany(q, params)
-            # rowcount unreliable for upserts; return count we attempted
-            return cur.rowcount if cur.rowcount >= 0 else 0
+    # ---------- reads ----------
 
-    def upsert_bars(self, rows: List[Bar]) -> int:
-        return self._execmany(SQL.UPSERT_BARS, (SQL.bar_params(r) for r in rows))
+    def latest_prices(self, symbols: Sequence[str], vendor: str) -> list[LatestPrice]:
+        syms = [s.upper() for s in symbols]
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute(q.LATEST_PRICES, {"vendor": vendor, "symbols": syms})
+            out: list[LatestPrice] = []
+            for tenant_id, vendor, symbol, price, price_ts in cur.fetchall():
+                out.append(
+                    LatestPrice(
+                        tenant_id=str(tenant_id),
+                        vendor=vendor,
+                        symbol=symbol,
+                        price=float(price),
+                        price_timestamp=price_ts,
+                    )
+                )
+            return out
 
-    def upsert_fundamentals(self, rows: List[Fundamentals]) -> int:
-        return self._execmany(SQL.UPSERT_FUNDAMENTALS, (SQL.fund_params(r) for r in rows))
+    def bars_window(self, symbol: str, timeframe: str, start, end, vendor: str):
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                q.BARS_WINDOW,
+                {
+                    "vendor": vendor,
+                    "symbol": symbol.upper(),
+                    "timeframe": timeframe,
+                    "start": start,
+                    "end": end,
+                },
+            )
+            return cur.fetchall()
 
-    def upsert_news(self, rows: List[News]) -> int:
-        return self._execmany(SQL.UPSERT_NEWS, (SQL.news_params(r) for r in rows))
+    # ---------- writes (UPSERTS) ----------
 
-    def upsert_options(self, rows: List[OptionSnap]) -> int:
-        return self._execmany(SQL.UPSERT_OPTIONS, (SQL.opt_params(r) for r in rows))
+    def upsert_bars(self, rows: Sequence[Bar]) -> int:
+        payload = self._dicts(rows)
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.executemany(q.UPSERT_BARS, payload)
+            return len(payload)
+
+    def upsert_fundamentals(self, rows: Sequence[Fundamentals]) -> int:
+        payload = self._dicts(rows)
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.executemany(q.UPSERT_FUNDAMENTALS, payload)
+            return len(payload)
+
+    def upsert_news(self, rows: Sequence[News]) -> int:
+        payload = self._dicts(rows)
+        # ensure an id (PK requires it)
+        for r in payload:
+            if not r.get("id"):
+                r["id"] = str(uuid.uuid4())
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.executemany(q.UPSERT_NEWS, payload)
+            return len(payload)
+
+    def upsert_options(self, rows: Sequence[OptionSnap]) -> int:
+        payload = self._dicts(rows)
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.executemany(q.UPSERT_OPTIONS, payload)
+            return len(payload)
+
+    # ---------- jobs ----------
 
     def enqueue_job(
-        self,
-        *,
-        tenant_id: str,
-        idempotency_key: str,
-        job_type: str,
-        payload: dict,
-        priority: str = "medium",
-        status: str = "queued",
-    ) -> Optional[int]:
-        with self._conn() as c:
-            cur = c.execute(
-                SQL.ENQUEUE_JOB, (tenant_id, idempotency_key, job_type, payload, status, priority)
+        self, *, idempotency_key: str, job_type: str, payload: dict, priority: str = "medium"
+    ) -> None:
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                q.ENQUEUE_JOB,
+                {
+                    "idempotency_key": idempotency_key,
+                    "job_type": job_type,
+                    "payload": payload,
+                    "priority": priority,
+                },
             )
-            row = cur.fetchone()
-            return row[0] if row else None
-
-    # ---------- Reads
-    def latest_prices(self, symbols: List[str], vendor: str) -> List[LatestPrice]:
-        with self._conn() as c:
-            cur = c.execute(SQL.LATEST_PRICES, (vendor, symbols))
-            return [LatestPrice(**dict(row)) for row in cur.fetchall()]
-
-    def bars_window(
-        self, symbol: str, timeframe: str, start, end, vendor: str, tenant_id: str
-    ) -> List[Bar]:
-        with self._conn() as c:
-            cur = c.execute(
-                SQL.BARS_WINDOW, (tenant_id, vendor, symbol.upper(), timeframe, start, end)
-            )
-            return [Bar(**dict(row)) for row in cur.fetchall()]

@@ -57,6 +57,16 @@
       "summary": "\"\"\""
     },
     {
+      "path": "src/market_data_store/coordinator/feedback.py",
+      "sha": "0e4783a2f346cc87",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/market_data_store/coordinator/http_broadcast.py",
+      "sha": "098a8437fa700fd0",
+      "summary": "\"\"\""
+    },
+    {
       "path": "src/market_data_store/coordinator/metrics.py",
       "sha": "96f357c263135e63",
       "summary": "\"\"\""
@@ -68,12 +78,12 @@
     },
     {
       "path": "src/market_data_store/coordinator/queue.py",
-      "sha": "8e1aafed69229953",
+      "sha": "8eb1af79d2846818",
       "summary": "from __future__ import annotations"
     },
     {
       "path": "src/market_data_store/coordinator/settings.py",
-      "sha": "f46a7d458c2c4d65",
+      "sha": "0c3d1b6a0598516d",
       "summary": "\"\"\""
     },
     {
@@ -88,12 +98,12 @@
     },
     {
       "path": "src/market_data_store/coordinator/write_coordinator.py",
-      "sha": "1f68330238d7d227",
+      "sha": "7e87dfe0fafccc36",
       "summary": "\"\"\""
     },
     {
       "path": "src/market_data_store/coordinator/__init__.py",
-      "sha": "51ee47369c20e048",
+      "sha": "2cf60d64e88ae081",
       "summary": "\"\"\"Write Coordinator (Phase 4.2A + 4.2B)"
     },
     {

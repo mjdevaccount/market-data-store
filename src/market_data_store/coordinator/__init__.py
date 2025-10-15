@@ -21,8 +21,16 @@ from .policy import (
 from .queue import BoundedQueue
 from .worker import SinkWorker
 from .write_coordinator import WriteCoordinator, CoordinatorHealth
-from .settings import CoordinatorRuntimeSettings
+from .settings import CoordinatorRuntimeSettings, FeedbackSettings
 from .dlq import DeadLetterQueue, DLQRecord
+from .feedback import (
+    BackpressureLevel,
+    FeedbackEvent,
+    FeedbackSubscriber,
+    FeedbackBus,
+    feedback_bus,
+)
+from .http_broadcast import HttpFeedbackBroadcaster
 
 __all__ = [
     # types
@@ -44,4 +52,12 @@ __all__ = [
     "CoordinatorRuntimeSettings",
     # tooling
     "DeadLetterQueue",
+    # feedback (Phase 6.0A)
+    "BackpressureLevel",
+    "FeedbackEvent",
+    "FeedbackSubscriber",
+    "FeedbackBus",
+    "feedback_bus",
+    "FeedbackSettings",
+    "HttpFeedbackBroadcaster",
 ]

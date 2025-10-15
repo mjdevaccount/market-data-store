@@ -33,3 +33,21 @@ class CoordinatorRuntimeSettings(BaseSettings):
     class Config:
         env_prefix = "MDS_"
         env_file = ".env"
+
+
+class FeedbackSettings(BaseSettings):
+    """Environment-configurable settings for backpressure feedback system."""
+
+    # Core feedback
+    enable_feedback: bool = Field(True, description="Enable feedback system globally")
+
+    # HTTP broadcasting
+    enable_http_broadcast: bool = Field(False, description="Enable HTTP feedback broadcasting")
+    http_endpoint: str | None = Field(None, description="HTTP endpoint URL for feedback events")
+    http_timeout: float = Field(2.5, description="HTTP request timeout (seconds)")
+    http_max_retries: int = Field(3, description="Max HTTP retry attempts")
+    http_backoff: float = Field(0.5, description="HTTP retry backoff base (seconds)")
+
+    class Config:
+        env_prefix = "MDS_FB_"
+        env_file = ".env"

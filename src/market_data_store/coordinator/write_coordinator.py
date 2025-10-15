@@ -78,6 +78,7 @@ class WriteCoordinator(Generic[T]):
             capacity=capacity,
             high_watermark=high_watermark,
             low_watermark=low_watermark,
+            coord_id=coord_id,
             overflow_strategy=overflow_strategy,
             on_high=on_backpressure_high,
             on_low=on_backpressure_low,

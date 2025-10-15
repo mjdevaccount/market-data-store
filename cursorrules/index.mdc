@@ -1,8 +1,12 @@
 # Always-Active Rules (market-data-store)
 SCOPE
-- This repo is a data-store control-plane: FastAPI admin endpoints, Alembic migrations, policies, CLI, metrics.
-- Includes mds_client library: Production-ready client for Market Data Core with sync/async APIs, batch processing, backup/restore.
-- No bulk data plane here. Orchestrator writes via the datastore library; readers go direct DB or separate analytics API.
+- This repo provides HYBRID architecture:
+  1. Control-plane: FastAPI admin endpoints, Alembic migrations, policies, CLI, metrics (datastore/).
+  2. Data-plane: Async sink layer for high-throughput ingestion with backpressure awareness (market_data_store/sinks/).
+  3. Write Coordinator: In-process async queue + worker pool with backpressure signaling (market_data_store/coordinator/).
+  4. mds_client library: Production-ready client for Market Data Core with sync/async APIs, batch processing, backup/restore.
+- Orchestrator can use either mds_client directly OR async sinks + coordinator for metrics + flow control.
+- Readers go direct DB or separate analytics API.
 
 BOUNDARIES
 - Do not create business tables without explicit instruction.
@@ -15,6 +19,8 @@ CONTEXT INJECTION
 - Prefer @reference with small, targeted snippets.
 - Always reference database_schema.mdc for schema, CLI, and migration details.
 - For mds_client tasks, reference mds_client_library.mdc for client API details.
+- For sinks tasks, reference sinks_layer.mdc for async sink architecture.
+- For coordinator tasks, reference coordinator_layer.mdc for write coordinator patterns.
 - For tenant ID issues, reference docs/schema.md for foreign key relationships.
 
 STYLE

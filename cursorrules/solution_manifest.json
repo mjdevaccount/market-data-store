@@ -52,9 +52,64 @@
       "summary": "\"\"\"Market Data Store - Persistence and CQRS-lite store for market data.\"\"\""
     },
     {
+      "path": "src/market_data_store/coordinator/dlq.py",
+      "sha": "aba401faf8e0af21",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/market_data_store/coordinator/metrics.py",
+      "sha": "96f357c263135e63",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/market_data_store/coordinator/policy.py",
+      "sha": "e9e6fd6c3218c548",
+      "summary": "from __future__ import annotations"
+    },
+    {
+      "path": "src/market_data_store/coordinator/queue.py",
+      "sha": "8e1aafed69229953",
+      "summary": "from __future__ import annotations"
+    },
+    {
+      "path": "src/market_data_store/coordinator/settings.py",
+      "sha": "f46a7d458c2c4d65",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/market_data_store/coordinator/types.py",
+      "sha": "733213f4b94447a8",
+      "summary": "from __future__ import annotations"
+    },
+    {
+      "path": "src/market_data_store/coordinator/worker.py",
+      "sha": "135057fa8d062f0a",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/market_data_store/coordinator/write_coordinator.py",
+      "sha": "1f68330238d7d227",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/market_data_store/coordinator/__init__.py",
+      "sha": "51ee47369c20e048",
+      "summary": "\"\"\"Write Coordinator (Phase 4.2A + 4.2B)"
+    },
+    {
       "path": "src/market_data_store/ingestion/__init__.py",
       "sha": "e5c4fc27cb5767ad",
       "summary": "\"\"\"Data ingestion module for market data store.\"\"\""
+    },
+    {
+      "path": "src/market_data_store/metrics/registry.py",
+      "sha": "51fa996021781d73",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/market_data_store/metrics/__init__.py",
+      "sha": "f17c328bbeafc050",
+      "summary": "\"\"\""
     },
     {
       "path": "src/market_data_store/queries/__init__.py",
@@ -65,6 +120,36 @@
       "path": "src/market_data_store/schema/__init__.py",
       "sha": "3054019dad6d8784",
       "summary": "\"\"\"Database schema module for market data store.\"\"\""
+    },
+    {
+      "path": "src/market_data_store/sinks/bars_sink.py",
+      "sha": "9b4664461501ff8a",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/market_data_store/sinks/base.py",
+      "sha": "df0182933262b40b",
+      "summary": "\"\"\""
+    },
+    {
+      "path": "src/market_data_store/sinks/fundamentals_sink.py",
+      "sha": "406c92c864cdf0e7",
+      "summary": "from typing import Sequence"
+    },
+    {
+      "path": "src/market_data_store/sinks/news_sink.py",
+      "sha": "34fa7120884224f4",
+      "summary": "from typing import Sequence"
+    },
+    {
+      "path": "src/market_data_store/sinks/options_sink.py",
+      "sha": "41edc6dc226fd4c5",
+      "summary": "from typing import Sequence"
+    },
+    {
+      "path": "src/market_data_store/sinks/__init__.py",
+      "sha": "e04843fce72d0b8f",
+      "summary": "\"\"\""
     },
     {
       "path": "src/mds_client/aclient.py",
@@ -148,7 +233,7 @@
     },
     {
       "path": "cursorrules/index.mdc",
-      "sha": "6ec7d6f3372bfbb4",
+      "sha": "b42794c93552188c",
       "summary": "# Always-Active Rules (market-data-store)"
     },
     {
@@ -170,6 +255,11 @@
       "path": "cursorrules/rules/coding_standards.mdc",
       "sha": "f924c740c607d24e",
       "summary": "# Rule: Coding Standards"
+    },
+    {
+      "path": "cursorrules/rules/coordinator_layer.mdc",
+      "sha": "4ee32918e2eb0f93",
+      "summary": "# Coordinator Layer Rules (Phase 4.2A)"
     },
     {
       "path": "cursorrules/rules/database_schema.mdc",
@@ -210,6 +300,11 @@
       "path": "cursorrules/rules/readme_generation.mdc",
       "sha": "fe32c752c46a7913",
       "summary": "# README Generation Rules"
+    },
+    {
+      "path": "cursorrules/rules/sinks_layer.mdc",
+      "sha": "a0858dacc3223c6a",
+      "summary": "# Rule: Async Sinks Layer"
     },
     {
       "path": "cursorrules/rules/solution_lookup.mdc",

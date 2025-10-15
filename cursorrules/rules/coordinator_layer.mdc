@@ -1,0 +1,311 @@
+# Coordinator Layer Rules (Phase 4.2A)
+
+## Scope
+Rules specific to `src/market_data_store/coordinator/` – the in-process async write coordinator with backpressure and flow control.
+
+## Architecture
+
+### Producer → Queue → Workers → Sink Pipeline
+
+```
+Producer(s)
+    ↓
+WriteCoordinator.submit() / submit_many()
+    ↓
+BoundedQueue (watermarks + overflow strategies)
+    ↓
+SinkWorker[1..N] (batching + retry)
+    ↓
+Sink (from Phase 4.1)
+    ↓
+Database
+```
+
+### Key Components
+
+1. **WriteCoordinator** (`write_coordinator.py`)
+   - High-level orchestration
+   - Context manager protocol (`__aenter__`, `__aexit__`)
+   - Submit API: `submit(item)`, `submit_many(items)`
+   - Health checks: `health()` → `CoordinatorHealth`
+   - Graceful shutdown with queue draining
+
+2. **BoundedQueue** (`queue.py`)
+   - Async bounded queue with `asyncio.Queue` backend
+   - High/low watermark callbacks (fire once, no spam)
+   - Overflow strategies: `"block"`, `"drop_oldest"`, `"error"`
+   - Thread-safe via `asyncio.Lock`
+
+3. **SinkWorker** (`worker.py`)
+   - Consumes from queue in loop
+   - Batching: size-based AND time-based
+   - Retry logic with exponential backoff + jitter
+   - Graceful stop with final flush
+
+4. **RetryPolicy** (`policy.py`)
+   - Exponential backoff: `initial_backoff_ms`, `max_backoff_ms`, `backoff_multiplier`
+   - Jitter: 50-100% of calculated backoff
+   - Retryable classifier: checks exception type name AND message text
+
+5. **Types** (`types.py`)
+   - `Sink` protocol: `async def write(batch: Sequence[T]) -> None`
+   - `BackpressureCallback`: `Callable[[], Awaitable[None]]`
+   - `QueueFullError`: raised when `overflow_strategy="error"` and queue full
+   - `Stoppable` protocol: `async def stop() -> None`
+
+## Design Principles
+
+1. **Library-First**: No service dependencies, runs in-process
+2. **Type-Safe**: Full `TypeVar` generics, `Protocol` for contracts
+3. **Graceful Shutdown**: Always drain queue before stopping workers
+4. **Backpressure-Aware**: Watermark callbacks for flow control
+5. **Retry-Friendly**: Exponential backoff with jitter, customizable classifiers
+6. **Observable**: Reuses Phase 4.1 sink metrics, health checks exposed
+
+## Usage Patterns
+
+### Basic Usage
+
+```python
+from market_data_store.coordinator import WriteCoordinator
+from market_data_store.sinks import BarsSink
+
+async with WriteCoordinator[Bar](
+    sink=BarsSink(amds),
+    capacity=10_000,
+    workers=4,
+    batch_size=500,
+    flush_interval=0.25,
+) as coord:
+    await coord.submit(bar)
+```
+
+### With Backpressure Callbacks
+
+```python
+async def on_high():
+    logger.warning("Backpressure HIGH")
+    # Signal to pipeline to slow down
+
+async def on_low():
+    logger.info("Backpressure recovered")
+    # Signal to pipeline to resume
+
+coord = WriteCoordinator[Bar](
+    sink=sink,
+    high_watermark=8000,
+    low_watermark=5000,
+    on_backpressure_high=on_high,
+    on_backpressure_low=on_low,
+)
+```
+
+### Custom Retry Policy
+
+```python
+from market_data_store.coordinator import RetryPolicy
+
+retry = RetryPolicy(
+    max_attempts=5,
+    initial_backoff_ms=50,
+    max_backoff_ms=2000,
+    jitter=True,
+    classify_retryable=lambda exc: isinstance(exc, TimeoutError),
+)
+
+coord = WriteCoordinator[Bar](
+    sink=sink,
+    retry_policy=retry,
+)
+```
+
+### Health Monitoring
+
+```python
+health = coord.health()
+print(f"Workers: {health.workers_alive}")
+print(f"Queue: {health.queue_size}/{health.capacity}")
+```
+
+## Configuration Reference
+
+### WriteCoordinator Parameters
+
+- `sink: Sink[T]` – Target sink (required)
+- `capacity: int = 10_000` – Queue capacity
+- `workers: int = 4` – Number of worker tasks
+- `batch_size: int = 500` – Max items per batch
+- `flush_interval: float = 0.25` – Max seconds between flushes
+- `high_watermark: int | None = 0.8 * capacity` – Queue size for backpressure HIGH
+- `low_watermark: int | None = 0.5 * capacity` – Queue size for backpressure recovery
+- `overflow_strategy: "block" | "drop_oldest" | "error" = "block"` – Overflow behavior
+- `on_backpressure_high: BackpressureCallback | None` – High watermark callback
+- `on_backpressure_low: BackpressureCallback | None` – Low watermark callback
+- `drop_callback: Callable[[T], Awaitable[None]] | None` – Dropped item callback
+- `retry_policy: RetryPolicy | None` – Retry configuration
+
+### RetryPolicy Parameters
+
+- `max_attempts: int = 5` – Max retries per batch
+- `initial_backoff_ms: int = 50` – Initial backoff
+- `max_backoff_ms: int = 2000` – Max backoff cap
+- `backoff_multiplier: float = 2.0` – Exponential multiplier
+- `jitter: bool = True` – Add jitter (50-100% of calculated)
+- `classify_retryable: Callable[[Exception], bool]` – Retryability classifier
+
+### Overflow Strategies
+
+- `"block"` – Producer waits (default, no data loss)
+- `"drop_oldest"` – Remove oldest item to make space (real-time use case)
+- `"error"` – Raise `QueueFullError` (fail-fast)
+
+## Testing Requirements
+
+### Unit Tests
+
+1. **RetryPolicy** (`test_policy.py`)
+   - Default classifier recognizes transient errors (TimeoutError, "temporary", etc.)
+   - Backoff curve is monotonic with cap
+   - Jitter produces values in expected range
+   - Custom classifiers work correctly
+
+2. **BoundedQueue** (`test_queue_watermarks.py`)
+   - Watermark signals fire once and recover properly
+   - Drop oldest strategy works correctly
+   - Error strategy raises `QueueFullError`
+
+3. **SinkWorker** (`test_worker_retry.py`)
+   - Worker retries on transient errors and eventually succeeds
+   - Worker raises after exhausting retries
+   - Time-based flush works correctly
+
+4. **WriteCoordinator** (`test_write_coordinator.py`)
+   - Submit and drain work correctly
+   - Backpressure callbacks fire at correct thresholds
+   - Submit_many processes all items
+   - Graceful shutdown drains queue
+   - Multiple workers process in parallel
+
+### Integration Tests (Future)
+
+- End-to-end with live database
+- Concurrent producers + consumers
+- Backpressure integration with pipeline
+
+## Metrics
+
+Phase 4.2A reuses **Phase 4.1 sink metrics**:
+
+- `sink_writes_total{sink, status}` – Counter (success/failure)
+- `sink_write_latency_seconds{sink}` – Histogram
+
+**Future (Phase 4.2B):**
+- `coordinator_queue_depth` – Gauge
+- `coordinator_worker_errors_total` – Counter
+- `coordinator_items_dropped_total` – Counter
+
+## Common Patterns
+
+### Graceful Shutdown
+
+```python
+async with WriteCoordinator(...) as coord:
+    # Use coordinator
+    pass  # __aexit__ drains queue and stops workers
+```
+
+### Manual Lifecycle
+
+```python
+coord = WriteCoordinator(...)
+await coord.start()
+try:
+    await coord.submit(item)
+finally:
+    await coord.stop(drain=True, timeout=10.0)
+```
+
+### Health Checks in FastAPI
+
+```python
+from fastapi import FastAPI
+from market_data_store.coordinator import WriteCoordinator
+
+app = FastAPI()
+coord: WriteCoordinator = ...
+
+@app.get("/health/coordinator")
+def coordinator_health():
+    h = coord.health()
+    return {
+        "workers_alive": h.workers_alive,
+        "queue_size": h.queue_size,
+        "capacity": h.capacity,
+    }
+```
+
+## Error Handling
+
+### Transient Errors (Retryable)
+
+```python
+# Default classifier catches:
+# - TimeoutError, ConnectionError, etc. (by type name)
+# - Exceptions with "timeout", "temporary", "deadlock", "retry", "busy" in message
+```
+
+### Non-Retryable Errors
+
+```python
+# Examples:
+# - PermissionError, AuthenticationError (auth issues)
+# - ValidationError (bad data)
+# - NotImplementedError (code bugs)
+```
+
+### Custom Classifier
+
+```python
+def my_classifier(exc: Exception) -> bool:
+    # Retry only specific errors
+    return isinstance(exc, (TimeoutError, asyncpg.exceptions.DeadlockDetectedError))
+
+retry = RetryPolicy(classify_retryable=my_classifier)
+```
+
+## Limitations (Phase 4.2A)
+
+1. **No Dead Letter Queue:** Failed items are dropped after all retries
+2. **No Circuit Breaker:** No automatic pause on repeated failures
+3. **No Queue Depth Metrics:** Only health checks, no Prometheus gauge yet
+4. **Fixed Worker Count:** No dynamic scaling
+5. **In-Process Only:** No distributed coordination across services
+
+## Future Work
+
+### Phase 4.2B (Optional Enhancements)
+
+- Dead Letter Queue for failed items
+- Circuit Breaker pattern
+- Queue depth and worker error metrics
+- Integration tests with live DB
+
+### Phase 4.3 (Pipeline Integration)
+
+- Wire backpressure to `RateCoordinator`
+- gRPC/REST backpressure API
+- Dynamic worker scaling
+- Distributed tracing with OpenTelemetry
+
+## Related Documents
+
+- [PHASE_4.2A_WRITE_COORDINATOR.md](../../PHASE_4.2A_WRITE_COORDINATOR.md) – Full implementation guide
+- [PHASE_4_IMPLEMENTATION.md](../../PHASE_4_IMPLEMENTATION.md) – Phase 4.1 sinks layer
+- [sinks_layer.mdc](./sinks_layer.mdc) – Sinks layer rules
+- [index.mdc](../index.mdc) – Always-active rules
+
+## Version
+
+**Phase:** 4.2A
+**Status:** ✅ Complete
+**Last Updated:** October 15, 2025

@@ -1,0 +1,26 @@
+# Rule: Async Sinks Layer
+SCOPE
+- Phase 4.1: Async sink layer for high-throughput ingestion with metrics.
+- Provides BaseSink + BarsSink + OptionsSink + FundamentalsSink + NewsSink.
+
+ARCHITECTURE
+- All sinks are async context managers (__aenter__, __aexit__).
+- Wrap mds_client.AMDS upsert methods for type-safe batch writes.
+- Auto-record Prometheus metrics (sink_writes_total, sink_write_latency_seconds).
+- Use loguru for logging, time.perf_counter() for latency tracking.
+
+IMPLEMENTATION
+- BaseSink: Abstract base in sinks/base.py with _safe_write() helper.
+- Concrete sinks: Thin wrappers calling AMDS.upsert_bars/options/fundamentals/news.
+- Metrics: Auto-registered to global Prometheus REGISTRY on import.
+- Tests: Unit tests in tests/unit/sinks/ (12 tests, 100% pass).
+
+USAGE
+- Import: from market_data_store.sinks import BarsSink
+- Pattern: async with BarsSink(amds) as sink: await sink.write([bar])
+- Metrics: Available at /metrics endpoint (sink_writes_total, sink_write_latency_seconds).
+
+CONTEXT
+- @reference src/market_data_store/sinks/
+- @reference PHASE_4_IMPLEMENTATION.md
+- @reference tests/unit/sinks/

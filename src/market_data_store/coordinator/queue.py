@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 from typing import Generic, TypeVar, Optional, Literal, Awaitable, Callable
 
+from market_data_core.telemetry import BackpressureLevel
+
 from .types import BackpressureCallback, QueueFullError
-from .feedback import BackpressureLevel, FeedbackEvent, feedback_bus
+from .feedback import FeedbackEvent, feedback_bus
 
 T = TypeVar("T")
 OverflowStrategy = Literal["block", "drop_oldest", "error"]
@@ -106,8 +108,8 @@ class BoundedQueue(Generic[T]):
         return item
 
     async def _emit_feedback(self, level: BackpressureLevel, reason: str | None = None) -> None:
-        """Emit feedback event to FeedbackBus."""
-        event = FeedbackEvent(
+        """Emit feedback event to FeedbackBus using Core-compatible factory."""
+        event = FeedbackEvent.create(
             coordinator_id=self._coord_id,
             queue_size=self._size,
             capacity=self._capacity,
@@ -122,19 +124,19 @@ class BoundedQueue(Generic[T]):
         if not self._high_fired and self._size >= self._high_wm:
             self._high_fired = True
             self._soft_fired = True
-            await self._emit_feedback(BackpressureLevel.HARD)
+            await self._emit_feedback(BackpressureLevel.hard)
             if self._on_high:
                 await self._on_high()
         # SOFT: between low and high watermarks
         elif not self._soft_fired and self._low_wm < self._size < self._high_wm:
             self._soft_fired = True
-            await self._emit_feedback(BackpressureLevel.SOFT)
+            await self._emit_feedback(BackpressureLevel.soft)
 
     async def _maybe_signal_low(self) -> None:
         """Signal when queue recovers below low watermark."""
         if (self._high_fired or self._soft_fired) and self._size <= self._low_wm:
             self._high_fired = False
             self._soft_fired = False
-            await self._emit_feedback(BackpressureLevel.OK, reason="queue_recovered")
+            await self._emit_feedback(BackpressureLevel.ok, reason="queue_recovered")
             if self._on_low:
                 await self._on_low()

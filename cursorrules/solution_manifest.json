@@ -13,7 +13,7 @@
     },
     {
       "path": "src/datastore/config.py",
-      "sha": "efbcc11898e80cdc",
+      "sha": "0f85ae9531580e8a",
       "summary": "from pydantic_settings import BaseSettings"
     },
     {
@@ -43,7 +43,7 @@
     },
     {
       "path": "src/datastore/service/app.py",
-      "sha": "78898ad701739402",
+      "sha": "8612ac0f47d4c126",
       "summary": "from fastapi import FastAPI, Response, status, HTTPException, Depends, Request"
     },
     {
@@ -58,7 +58,7 @@
     },
     {
       "path": "src/market_data_store/coordinator/feedback.py",
-      "sha": "0e4783a2f346cc87",
+      "sha": "85d6383b6ad5395d",
       "summary": "\"\"\""
     },
     {
@@ -78,7 +78,7 @@
     },
     {
       "path": "src/market_data_store/coordinator/queue.py",
-      "sha": "8eb1af79d2846818",
+      "sha": "a6bd91971b71f4df",
       "summary": "from __future__ import annotations"
     },
     {
@@ -103,8 +103,8 @@
     },
     {
       "path": "src/market_data_store/coordinator/__init__.py",
-      "sha": "2cf60d64e88ae081",
-      "summary": "\"\"\"Write Coordinator (Phase 4.2A + 4.2B)"
+      "sha": "739ae9ae9e84aad8",
+      "summary": "\"\"\"Write Coordinator (Phase 4.2A + 4.2B + Phase 8.0)"
     },
     {
       "path": "src/market_data_store/ingestion/__init__.py",

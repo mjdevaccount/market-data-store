@@ -102,14 +102,22 @@ uvicorn datastore.service.app:app --host 0.0.0.0 --port 8000 --factory
 
 ## 📋 Releases
 
-### 🏷️ Current Release: [v0.1.0](https://github.com/mjdevaccount/market-data-store/releases/tag/v0.1.0)
+### 🏷️ Current Release: [v0.4.0]
 
 **What's included:**
+- ✅ **Core v1.1.0 contract adoption** - FeedbackEvent extends Core DTO
+- ✅ **Adapter pattern** - Preserves Store fields while maintaining Core compatibility
+- ✅ **Health DTOs** - `/healthz` and `/readyz` return Core `HealthStatus`
 - ✅ Complete `mds_client` library with sync/async APIs
 - ✅ Production-ready batch processing and backup/restore
 - ✅ Comprehensive CLI with all operational commands
 - ✅ Full documentation and troubleshooting guides
 - ✅ RLS security and tenant isolation
+
+### Previous Release: [v0.3.0]
+- ✅ Write coordinator with backpressure feedback
+- ✅ Async sinks layer
+- ✅ HTTP feedback broadcaster
 
 ### 📦 Installation from Release
 ```bash

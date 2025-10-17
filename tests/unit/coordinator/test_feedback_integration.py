@@ -1,5 +1,7 @@
 """
 Integration tests for feedback system with WriteCoordinator and BoundedQueue.
+
+Tests work with Store-extended FeedbackEvent (inherits from Core).
 """
 
 import asyncio
@@ -7,12 +9,8 @@ import pytest
 from dataclasses import dataclass
 from typing import Sequence
 
-from market_data_store.coordinator import WriteCoordinator, Sink
-from market_data_store.coordinator.feedback import (
-    BackpressureLevel,
-    FeedbackEvent,
-    feedback_bus,
-)
+from market_data_core.telemetry import BackpressureLevel
+from market_data_store.coordinator import WriteCoordinator, Sink, FeedbackEvent, feedback_bus
 
 
 @dataclass
@@ -74,7 +72,7 @@ async def test_coordinator_emits_hard_on_high_watermark(fresh_bus):
         await asyncio.sleep(0.05)
 
     # Should have emitted HARD
-    hard_events = [e for e in events if e.level == BackpressureLevel.HARD]
+    hard_events = [e for e in events if e.level == BackpressureLevel.hard]
     assert len(hard_events) >= 1
     assert hard_events[0].coordinator_id == "test-coord"
     assert hard_events[0].queue_size >= 80
@@ -108,7 +106,7 @@ async def test_coordinator_emits_soft_in_midrange(fresh_bus):
         await asyncio.sleep(0.05)
 
     # Should have emitted SOFT
-    soft_events = [e for e in events if e.level == BackpressureLevel.SOFT]
+    soft_events = [e for e in events if e.level == BackpressureLevel.soft]
     assert len(soft_events) >= 1
     assert soft_events[0].coordinator_id == "test-soft"
 
@@ -144,7 +142,7 @@ async def test_coordinator_emits_ok_on_recovery(fresh_bus):
         await asyncio.sleep(2.0)
 
     # Should have OK event with recovery reason
-    ok_events = [e for e in events if e.level == BackpressureLevel.OK]
+    ok_events = [e for e in events if e.level == BackpressureLevel.ok]
     assert len(ok_events) >= 1
     assert any(e.reason == "queue_recovered" for e in ok_events)
 

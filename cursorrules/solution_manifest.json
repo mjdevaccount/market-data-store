@@ -78,7 +78,7 @@
     },
     {
       "path": "src/market_data_store/coordinator/queue.py",
-      "sha": "f0de883ad44cc3ec",
+      "sha": "a6bd91971b71f4df",
       "summary": "from __future__ import annotations"
     },
     {

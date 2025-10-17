@@ -1,12 +1,14 @@
 """
 Unit tests for FeedbackBus and feedback system.
+
+Tests work with Store-extended FeedbackEvent (inherits from Core).
 """
 
 import asyncio
 import pytest
 
+from market_data_core.telemetry import BackpressureLevel
 from market_data_store.coordinator.feedback import (
-    BackpressureLevel,
     FeedbackEvent,
     FeedbackBus,
     feedback_bus,
@@ -21,12 +23,12 @@ def bus():
 
 @pytest.fixture
 def event():
-    """Sample feedback event."""
-    return FeedbackEvent(
+    """Sample feedback event using Store factory."""
+    return FeedbackEvent.create(
         coordinator_id="test-coord",
         queue_size=8000,
         capacity=10000,
-        level=BackpressureLevel.HARD,
+        level=BackpressureLevel.hard,
         reason="high_watermark",
     )
 
@@ -41,11 +43,11 @@ async def test_feedback_event_immutable(event):
 @pytest.mark.asyncio
 async def test_feedback_event_utilization():
     """FeedbackEvent.utilization calculates percentage correctly."""
-    event = FeedbackEvent(
+    event = FeedbackEvent.create(
         coordinator_id="test",
         queue_size=7500,
         capacity=10000,
-        level=BackpressureLevel.SOFT,
+        level=BackpressureLevel.soft,
     )
     assert event.utilization == 0.75  # 75%
 
@@ -53,11 +55,15 @@ async def test_feedback_event_utilization():
 @pytest.mark.asyncio
 async def test_feedback_event_utilization_zero_capacity():
     """FeedbackEvent.utilization handles zero capacity gracefully."""
+    import time
+
     event = FeedbackEvent(
         coordinator_id="test",
         queue_size=0,
         capacity=0,
-        level=BackpressureLevel.OK,
+        level=BackpressureLevel.ok,
+        source="store",
+        ts=time.time(),
     )
     assert event.utilization == 0.0
 
@@ -203,19 +209,19 @@ async def test_feedback_bus_singleton():
 @pytest.mark.asyncio
 async def test_backpressure_levels():
     """BackpressureLevel enum has expected values."""
-    assert BackpressureLevel.OK.value == "ok"
-    assert BackpressureLevel.SOFT.value == "soft"
-    assert BackpressureLevel.HARD.value == "hard"
+    assert BackpressureLevel.ok.value == "ok"
+    assert BackpressureLevel.soft.value == "soft"
+    assert BackpressureLevel.hard.value == "hard"
 
 
 @pytest.mark.asyncio
 async def test_feedback_event_with_reason():
     """FeedbackEvent can include optional reason."""
-    event = FeedbackEvent(
+    event = FeedbackEvent.create(
         coordinator_id="test",
         queue_size=5000,
         capacity=10000,
-        level=BackpressureLevel.OK,
+        level=BackpressureLevel.ok,
         reason="queue_drained",
     )
 
@@ -225,11 +231,11 @@ async def test_feedback_event_with_reason():
 @pytest.mark.asyncio
 async def test_feedback_event_without_reason():
     """FeedbackEvent reason defaults to None."""
-    event = FeedbackEvent(
+    event = FeedbackEvent.create(
         coordinator_id="test",
         queue_size=5000,
         capacity=10000,
-        level=BackpressureLevel.OK,
+        level=BackpressureLevel.ok,
     )
 
     assert event.reason is None
@@ -246,11 +252,11 @@ async def test_async_subscribers(bus):
 
     bus.subscribe(async_subscriber)
 
-    event = FeedbackEvent(
+    event = FeedbackEvent.create(
         coordinator_id="async-test",
         queue_size=1000,
         capacity=10000,
-        level=BackpressureLevel.OK,
+        level=BackpressureLevel.ok,
     )
 
     await bus.publish(event)

@@ -13,7 +13,7 @@
     },
     {
       "path": "src/datastore/config.py",
-      "sha": "0f85ae9531580e8a",
+      "sha": "39d6f3aa43a27140",
       "summary": "from pydantic_settings import BaseSettings"
     },
     {
@@ -78,7 +78,7 @@
     },
     {
       "path": "src/market_data_store/coordinator/queue.py",
-      "sha": "a6bd91971b71f4df",
+      "sha": "0fc12a8a3425d1a1",
       "summary": "from __future__ import annotations"
     },
     {

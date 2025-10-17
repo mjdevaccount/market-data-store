@@ -4,50 +4,92 @@ Backpressure feedback system for write coordinator.
 Provides in-process pub/sub for emitting and consuming backpressure signals.
 Multiple subscribers can react to queue depth changes (e.g., pipeline rate
 coordinator, HTTP webhooks, logging).
+
+NOTE: As of v0.4.0, FeedbackEvent extends market_data_core.telemetry.FeedbackEvent
+with Store-specific fields (reason, utilization). BackpressureLevel is imported
+directly from Core.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
+import time
 from typing import Optional, Protocol
 
 from loguru import logger
+from pydantic import Field
+
+# Import Core v1.1.0 contracts
+from market_data_core.telemetry import (
+    FeedbackEvent as CoreFeedbackEvent,
+    BackpressureLevel,
+)
 
 
-class BackpressureLevel(str, Enum):
-    """Backpressure severity levels."""
+class FeedbackEvent(CoreFeedbackEvent):
+    """Store-extended feedback event with debugging context.
 
-    OK = "ok"  # Below low watermark - normal operation
-    SOFT = "soft"  # Between low/high watermarks - caution
-    HARD = "hard"  # At/above high watermark - producer MUST slow/stop
+    Extends Core v1.1.0 FeedbackEvent with Store-specific fields:
+    - reason: Optional context string for debugging (e.g., "queue_recovered", "circuit_open")
+    - utilization: Computed property for queue usage percentage
 
-
-@dataclass(frozen=True)
-class FeedbackEvent:
-    """Immutable backpressure feedback event.
-
-    Emitted by WriteCoordinator when queue depth crosses watermarks.
-    Safe for async passing due to immutability.
+    This maintains full Core compatibility while preserving Store's domain extensions.
+    Core-compatible consumers will ignore extra fields during deserialization.
 
     Attributes:
         coordinator_id: Identifies the coordinator (e.g., "bars-coord", "options-coord")
-        queue_size: Current queue depth
-        capacity: Maximum queue capacity
-        level: Backpressure severity (OK, SOFT, HARD)
-        reason: Optional context (e.g., "circuit_open", "queue_drained")
+        queue_size: Current queue depth (from Core)
+        capacity: Maximum queue capacity (from Core)
+        level: Backpressure severity (from Core: ok/soft/hard)
+        source: Event source identifier (from Core, default="store")
+        ts: Event timestamp (from Core)
+        reason: Store-specific context string (Store extension)
     """
 
-    coordinator_id: str
-    queue_size: int
-    capacity: int
-    level: BackpressureLevel
-    reason: str | None = None
+    # Store-specific field extension
+    reason: str | None = Field(default=None, description="Optional backpressure context")
 
     @property
     def utilization(self) -> float:
-        """Queue utilization as percentage (0.0 to 1.0)."""
+        """Queue utilization as percentage (0.0 to 1.0).
+
+        Store-specific convenience property for monitoring.
+        """
         return self.queue_size / self.capacity if self.capacity > 0 else 0.0
+
+    @classmethod
+    def create(
+        cls,
+        coordinator_id: str,
+        queue_size: int,
+        capacity: int,
+        level: BackpressureLevel,
+        reason: str | None = None,
+    ) -> "FeedbackEvent":
+        """Factory method that auto-fills Core-required fields.
+
+        Convenience factory for Store-internal use. Automatically provides:
+        - ts: Current timestamp
+        - source: "store"
+
+        Args:
+            coordinator_id: Coordinator identifier
+            queue_size: Current queue depth
+            capacity: Maximum queue capacity
+            level: Backpressure severity level
+            reason: Optional context string
+
+        Returns:
+            FeedbackEvent with all Core and Store fields populated
+        """
+        return cls(
+            coordinator_id=coordinator_id,
+            queue_size=queue_size,
+            capacity=capacity,
+            level=level,
+            source="store",
+            ts=time.time(),
+            reason=reason,
+        )
 
 
 class FeedbackSubscriber(Protocol):

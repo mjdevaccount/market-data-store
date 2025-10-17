@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 from typing import Generic, TypeVar, Optional, Literal, Awaitable, Callable
 
+from market_data_core.telemetry import BackpressureLevel
+
 from .types import BackpressureCallback, QueueFullError
-from .feedback import BackpressureLevel, FeedbackEvent, feedback_bus
+from .feedback import FeedbackEvent, feedback_bus
 
 T = TypeVar("T")
 OverflowStrategy = Literal["block", "drop_oldest", "error"]
@@ -106,8 +108,8 @@ class BoundedQueue(Generic[T]):
         return item
 
     async def _emit_feedback(self, level: BackpressureLevel, reason: str | None = None) -> None:
-        """Emit feedback event to FeedbackBus."""
-        event = FeedbackEvent(
+        """Emit feedback event to FeedbackBus using Core-compatible factory."""
+        event = FeedbackEvent.create(
             coordinator_id=self._coord_id,
             queue_size=self._size,
             capacity=self._capacity,

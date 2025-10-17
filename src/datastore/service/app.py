@@ -12,7 +12,10 @@ from loguru import logger
 import time
 from datastore.config import get_settings
 
-app = FastAPI(title="market-data-store (control-plane)", version="0.1.0")
+# Core v1.1.0 telemetry contracts
+from market_data_core.telemetry import HealthStatus, HealthComponent
+
+app = FastAPI(title="market-data-store (control-plane)", version="0.4.0")
 
 # Minimal metrics
 registry = CollectorRegistry()
@@ -55,15 +58,17 @@ async def metrics_middleware(request: Request, call_next):
     return response
 
 
-@app.get("/healthz")
-def healthz():
+@app.get("/healthz", response_model=HealthStatus)
+async def healthz():
+    """Health check using Core v1.1.0 HealthStatus.
+
+    Returns structured health status with component breakdown.
+    Backward compatible: old consumers can parse as dict.
+    """
     STORE_UP.set(1)
-    return {"ok": True}
 
-
-@app.get("/readyz")
-def readyz():
-    # Check DB connectivity
+    # Check database connectivity
+    db_state = "healthy"
     try:
         from sqlalchemy import create_engine, text
 
@@ -71,10 +76,57 @@ def readyz():
         engine = create_engine(settings.database_url)
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        return {"ready": True}
     except Exception as e:
-        logger.error(f"Database connectivity check failed: {e}")
-        raise HTTPException(status_code=503, detail="Database not ready")
+        logger.error(f"DB health check failed: {e}")
+        db_state = "degraded"
+
+    # Build component list
+    components = [
+        HealthComponent(name="database", state=db_state),
+        HealthComponent(name="prometheus", state="healthy"),
+    ]
+
+    # Determine overall state (degraded if any component is not healthy)
+    overall_state = "degraded" if any(c.state != "healthy" for c in components) else "healthy"
+
+    return HealthStatus(
+        service="market-data-store",
+        state=overall_state,
+        components=components,
+        version="0.4.0",
+        ts=time.time(),
+    )
+
+
+@app.get("/readyz", response_model=HealthStatus)
+async def readyz():
+    """Readiness check using Core v1.1.0 HealthStatus.
+
+    Stricter than /healthz - returns 503 if any component is not healthy.
+    Used for k8s readiness probes.
+    """
+    try:
+        from sqlalchemy import create_engine, text
+
+        settings = get_settings()
+        engine = create_engine(settings.database_url)
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+
+        components = [
+            HealthComponent(name="database", state="healthy"),
+        ]
+
+        return HealthStatus(
+            service="market-data-store",
+            state="healthy",
+            components=components,
+            version="0.4.0",
+            ts=time.time(),
+        )
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+        raise HTTPException(status_code=503, detail="Service not ready")
 
 
 @app.get("/schema/version")

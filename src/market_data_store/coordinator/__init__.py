@@ -1,4 +1,4 @@
-"""Write Coordinator (Phase 4.2A + 4.2B)
+"""Write Coordinator (Phase 4.2A + 4.2B + Phase 8.0)
 
 Core producer→queue→worker→sink pipeline with:
 - BoundedQueue (watermarks + overflow strategies)
@@ -9,7 +9,11 @@ Core producer→queue→worker→sink pipeline with:
 - Prometheus metrics
 - Dead Letter Queue (file-based NDJSON)
 - Environment-based settings
+- Phase 8.0: Core v1.1.0 contract adoption (FeedbackEvent extends Core DTO)
 """
+
+# Core v1.1.0 contracts (imported directly)
+from market_data_core.telemetry import BackpressureLevel
 
 from .types import Sink, BackpressureCallback, T, QueueFullError
 from .policy import (
@@ -24,8 +28,7 @@ from .write_coordinator import WriteCoordinator, CoordinatorHealth
 from .settings import CoordinatorRuntimeSettings, FeedbackSettings
 from .dlq import DeadLetterQueue, DLQRecord
 from .feedback import (
-    BackpressureLevel,
-    FeedbackEvent,
+    FeedbackEvent,  # Store-extended (inherits from Core)
     FeedbackSubscriber,
     FeedbackBus,
     feedback_bus,

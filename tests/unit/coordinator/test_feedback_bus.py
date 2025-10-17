@@ -54,18 +54,19 @@ async def test_feedback_event_utilization():
 
 @pytest.mark.asyncio
 async def test_feedback_event_utilization_zero_capacity():
-    """FeedbackEvent.utilization handles zero capacity gracefully."""
+    """FeedbackEvent.utilization handles zero queue_size gracefully."""
     import time
 
+    # Core enforces capacity > 0, so test zero queue_size instead
     event = FeedbackEvent(
         coordinator_id="test",
         queue_size=0,
-        capacity=0,
+        capacity=100,  # Core requires capacity > 0
         level=BackpressureLevel.ok,
         source="store",
         ts=time.time(),
     )
-    assert event.utilization == 0.0
+    assert event.utilization == 0.0  # 0/100 = 0.0
 
 
 @pytest.mark.asyncio
@@ -81,7 +82,7 @@ async def test_subscribe_and_publish(bus, event):
 
     assert len(received) == 1
     assert received[0] is event
-    assert received[0].level == BackpressureLevel.HARD
+    assert received[0].level == BackpressureLevel.hard
 
 
 @pytest.mark.asyncio

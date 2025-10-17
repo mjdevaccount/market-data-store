@@ -18,6 +18,8 @@ src/market_data_store.egg-info/requires.txt
 src/market_data_store.egg-info/top_level.txt
 src/market_data_store/coordinator/__init__.py
 src/market_data_store/coordinator/dlq.py
+src/market_data_store/coordinator/feedback.py
+src/market_data_store/coordinator/http_broadcast.py
 src/market_data_store/coordinator/metrics.py
 src/market_data_store/coordinator/policy.py
 src/market_data_store/coordinator/queue.py

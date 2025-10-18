@@ -1,0 +1,47 @@
+name: dispatch_pulse
+
+# Workflow dispatch handler for cross-repo Pulse testing
+# Triggered by Core's fanout after Core releases/changes
+#
+# Tests Store's Pulse integration against specified Core version
+# with matrix: schema_track × bus_backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_ref:
+        description: "Core ref (tag/branch/SHA)"
+        required: true
+        type: string
+      schema_track:
+        description: "Schema track (v1 or v2) - optional, uses matrix if not set"
+        required: false
+        type: string
+      bus_backend:
+        description: "Bus backend (inmem or redis) - optional, uses matrix if not set"
+        required: false
+        type: string
+
+jobs:
+  # Single test if specific track/backend provided
+  single-test:
+    if: inputs.schema_track != '' && inputs.bus_backend != ''
+    uses: ./.github/workflows/_pulse_reusable.yml
+    with:
+      core_ref: ${{ inputs.core_ref }}
+      schema_track: ${{ inputs.schema_track }}
+      bus_backend: ${{ inputs.bus_backend }}
+
+  # Matrix test if no specific track/backend
+  matrix-test:
+    if: inputs.schema_track == '' || inputs.bus_backend == ''
+    strategy:
+      fail-fast: false
+      matrix:
+        schema_track: [v1, v2]
+        bus_backend: [inmem, redis]
+    uses: ./.github/workflows/_pulse_reusable.yml
+    with:
+      core_ref: ${{ inputs.core_ref }}
+      schema_track: ${{ matrix.schema_track }}
+      bus_backend: ${{ matrix.bus_backend }}

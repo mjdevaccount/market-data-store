@@ -1,0 +1,119 @@
+name: _pulse_reusable
+
+# Reusable workflow for running Pulse integration tests
+# Tests Store's feedback publisher with Core's event bus
+#
+# Matrix dimensions:
+# - schema_track: v1, v2
+# - bus_backend: inmem, redis
+
+on:
+  workflow_call:
+    inputs:
+      core_ref:
+        description: "Git ref (tag/branch/SHA) of market-data-core"
+        required: true
+        type: string
+      schema_track:
+        description: "Schema track version (v1 or v2)"
+        required: true
+        type: string
+      bus_backend:
+        description: "Event bus backend (inmem or redis)"
+        required: true
+        type: string
+
+jobs:
+  pulse-tests:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PULSE_ENABLED: true
+      EVENT_BUS_BACKEND: ${{ inputs.bus_backend }}
+      REDIS_URL: redis://localhost:6379/0
+      MD_NAMESPACE: test_mdp
+      SCHEMA_TRACK: ${{ inputs.schema_track }}
+
+    steps:
+      - name: Checkout Store repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Core @ specified ref
+        run: |
+          pip install -U pip wheel
+          pip install "git+https://github.com/mjdevaccount/market-data-core.git@${{ inputs.core_ref }}"
+          pip freeze | grep market-data-core
+
+      - name: Install Store + dev deps
+        run: |
+          pip install -e .
+          pip install -r requirements-dev.txt || true
+          pip install pytest pytest-asyncio
+
+      - name: Verify Core event bus available
+        run: |
+          python -c "from market_data_core.events import create_event_bus; print('✓ Event bus available')"
+          python -c "from market_data_core.telemetry import FeedbackEvent; print('✓ FeedbackEvent available')"
+
+      - name: Run Pulse tests (inmem)
+        if: inputs.bus_backend == 'inmem'
+        run: |
+          pytest -xvs tests/pulse/ -k "not redis"
+
+      - name: Run Pulse tests (redis)
+        if: inputs.bus_backend == 'redis'
+        run: |
+          pytest -xvs tests/pulse/
+
+      - name: Test feedback flow end-to-end
+        run: |
+          python -c "
+          import asyncio
+          from market_data_store.pulse import FeedbackPublisherService, PulseConfig
+          from market_data_store.coordinator import FeedbackEvent, feedback_bus
+          from market_data_core.telemetry import BackpressureLevel
+
+          async def test():
+              cfg = PulseConfig()
+              pub = FeedbackPublisherService(cfg)
+              await pub.start()
+
+              # Create and publish event
+              event = FeedbackEvent.create(
+                  coordinator_id='ci-test',
+                  queue_size=80,
+                  capacity=100,
+                  level=BackpressureLevel.SOFT,
+                  reason='ci_smoke_test'
+              )
+              await feedback_bus().publish(event)
+
+              await pub.stop()
+              print('✓ End-to-end test passed')
+
+          asyncio.run(test())
+          "
+
+      - name: Summary
+        run: |
+          echo "✅ Pulse tests passed:"
+          echo "   - Core ref: ${{ inputs.core_ref }}"
+          echo "   - Schema track: ${{ inputs.schema_track }}"
+          echo "   - Backend: ${{ inputs.bus_backend }}"

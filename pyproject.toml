@@ -5,7 +5,7 @@ description = "Data store control-plane (schema, migrations, policies, ops) for 
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "market-data-core @ git+https://github.com/mjdevaccount/market-data-core.git@v1.1.0",
+  "market-data-core @ git+https://github.com/mjdevaccount/market-data-core.git@base",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
   "sqlalchemy>=2.0",

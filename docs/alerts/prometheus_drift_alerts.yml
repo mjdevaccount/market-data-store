@@ -1,0 +1,132 @@
+# Prometheus Alert Rules for Schema Drift (Phase 11.1)
+# These rules should be loaded into your Prometheus instance
+# See: https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/
+
+groups:
+  - name: schema_drift_alerts
+    interval: 30s
+    rules:
+      # Alert if FeedbackEvent schema has drifted for >30 minutes
+      - alert: CriticalSchemaDriftSustained
+        expr: |
+          schema_drift_last_detected_timestamp{
+            repo="market-data-store",
+            schema="telemetry.FeedbackEvent",
+            track="v1"
+          } > 0
+          and
+          (time() - schema_drift_last_detected_timestamp{
+            repo="market-data-store",
+            schema="telemetry.FeedbackEvent",
+            track="v1"
+          }) > 1800
+        for: 5m
+        labels:
+          severity: warning
+          component: store
+          phase: "11.1"
+        annotations:
+          summary: "FeedbackEvent schema drift sustained >30m"
+          description: |
+            Store's FeedbackEvent schema has been drifted from Registry for >30 minutes.
+            Repo: {{ $labels.repo }}
+            Schema: {{ $labels.schema }}
+            Track: {{ $labels.track }}
+            Last detected: {{ $value | humanizeTimestamp }}
+            Action: Review Registry v1 changes and update Store fixtures.
+          runbook_url: "https://github.com/mjdevaccount/market-data-store/blob/master/docs/runbooks/schema_drift.md"
+
+      # Alert on any schema drift for >1 hour
+      - alert: SchemaDriftActive
+        expr: |
+          sum by (repo, track, schema) (
+            schema_drift_active_total > 0
+          )
+        for: 60m
+        labels:
+          severity: info
+          component: store
+          phase: "11.1"
+        annotations:
+          summary: "Schema drift active >1h: {{ $labels.schema }}"
+          description: |
+            Schema has been drifted for over 1 hour.
+            Repo: {{ $labels.repo }}
+            Schema: {{ $labels.schema }}
+            Track: {{ $labels.track }}
+            Count: {{ $value }}
+            Action: Review drift report artifacts in CI or run check_schema_drift.py manually.
+
+      # Alert on high drift rate (multiple schemas drifting)
+      - alert: HighDriftRate
+        expr: |
+          sum by (repo, track) (
+            rate(schema_drift_total[15m])
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          component: store
+          phase: "11.1"
+        annotations:
+          summary: "High schema drift rate detected"
+          description: |
+            Multiple schemas drifting rapidly.
+            Repo: {{ $labels.repo }}
+            Track: {{ $labels.track }}
+            Rate: {{ $value | humanize }} drifts/sec
+            Action: Check if Registry had a bulk schema update. Review CI logs.
+
+      # Alert if drift detection is stale (nightly job failed)
+      - alert: DriftDetectionStale
+        expr: |
+          (time() - schema_drift_last_detected_timestamp) > 172800
+        for: 30m
+        labels:
+          severity: warning
+          component: store
+          phase: "11.1"
+        annotations:
+          summary: "Schema drift detection hasn't run in 48h"
+          description: |
+            Drift detection appears stale - nightly job may be failing.
+            Repo: {{ $labels.repo }}
+            Track: {{ $labels.track }}
+            Last run: {{ $value | humanizeTimestamp }}
+            Action: Check CI workflow registry_contracts.yml for failures.
+
+  - name: schema_registry_health
+    interval: 30s
+    rules:
+      # Alert if Registry is unreachable
+      - alert: RegistryUnreachable
+        expr: |
+          rate(schema_registry_errors_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: critical
+          component: registry
+          phase: "11.1"
+        annotations:
+          summary: "Schema Registry unreachable"
+          description: |
+            Registry has been returning errors for >10 minutes.
+            Error rate: {{ $value | humanize }} errors/sec
+            Action: Check Registry service health at https://schema-registry-service.fly.dev/health
+            Fallback: Stores use cached schemas (fail-open behavior).
+
+      # Alert if Registry sync is stale
+      - alert: RegistrySyncStale
+        expr: |
+          registry_sync_age_seconds > 300
+        for: 15m
+        labels:
+          severity: warning
+          component: registry
+          phase: "11.1"
+        annotations:
+          summary: "Registry index older than 5 minutes"
+          description: |
+            Registry hasn't synced schemas in >5 minutes.
+            Age: {{ $value | humanizeDuration }}
+            Action: Check Registry sync job logs. May indicate Core publish issues.

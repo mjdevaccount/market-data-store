@@ -3,7 +3,7 @@ Ensures sink and pulse metrics are visible in Prometheus global REGISTRY.
 Simply import this module at app startup.
 """
 
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 from market_data_store.sinks import SINK_WRITES_TOTAL, SINK_WRITE_LATENCY  # noqa: F401
 
@@ -24,6 +24,21 @@ PULSE_PUBLISH_LATENCY_MS = Histogram(
 )
 
 
+# --- Schema Drift Metrics (Phase 11.1) ---
+
+SCHEMA_DRIFT_TOTAL = Counter(
+    "schema_drift_total",
+    "Total number of schema drift events detected",
+    ["repo", "track", "schema"],
+)
+
+SCHEMA_DRIFT_LAST_DETECTED = Gauge(
+    "schema_drift_last_detected_timestamp",
+    "Timestamp of last schema drift detection",
+    ["repo", "track", "schema"],
+)
+
+
 class MetricsRegistry:
     """Centralized metrics registry for Store components.
 
@@ -35,6 +50,8 @@ class MetricsRegistry:
     pulse_publish_latency_ms = PULSE_PUBLISH_LATENCY_MS
     sink_writes_total = SINK_WRITES_TOTAL
     sink_write_latency = SINK_WRITE_LATENCY
+    schema_drift_total = SCHEMA_DRIFT_TOTAL
+    schema_drift_last_detected = SCHEMA_DRIFT_LAST_DETECTED
 
 
 # Singleton instance

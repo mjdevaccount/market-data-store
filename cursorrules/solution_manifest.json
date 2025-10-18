@@ -113,7 +113,7 @@
     },
     {
       "path": "src/market_data_store/metrics/registry.py",
-      "sha": "339d41d3233e49fd",
+      "sha": "20066b91428a5447",
       "summary": "\"\"\""
     },
     {
@@ -175,6 +175,16 @@
       "path": "src/market_data_store/sinks/__init__.py",
       "sha": "e04843fce72d0b8f",
       "summary": "\"\"\""
+    },
+    {
+      "path": "src/market_data_store/telemetry/drift_reporter.py",
+      "sha": "9e34ae7bd4cf92b0",
+      "summary": "\"\"\"Schema drift detection and telemetry reporting."
+    },
+    {
+      "path": "src/market_data_store/telemetry/__init__.py",
+      "sha": "f5d3c4d6719d54be",
+      "summary": "\"\"\"Telemetry module for schema drift detection and reporting.\"\"\""
     },
     {
       "path": "src/mds_client/aclient.py",

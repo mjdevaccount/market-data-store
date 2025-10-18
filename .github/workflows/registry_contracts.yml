@@ -103,3 +103,58 @@ jobs:
           name: registry-schemas-v2
           path: tests/fixtures/schemas-v2/
           retention-days: 30
+
+  drift-telemetry:
+    name: Schema Drift Telemetry (Phase 11.1)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: [contracts-v1]  # Run after contracts validation
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install core-registry-client
+        run: |
+          pip install -U pip wheel
+          pip install git+https://github.com/mjdevaccount/schema-registry-service.git#subdirectory=client_sdk
+
+      - name: Install Store + dev deps
+        run: |
+          pip install -e .
+          pip install -r requirements-dev.txt || pip install pytest pytest-asyncio
+
+      - name: Download v1 schemas artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: registry-schemas-v1
+          path: tests/fixtures/schemas/
+
+      - name: Run drift telemetry tests
+        run: |
+          pytest tests/telemetry/test_drift_reporter.py -v --tb=short
+        env:
+          PULSE_ENABLED: true
+          EVENT_BUS_BACKEND: inmem
+          SCHEMA_TRACK: v1
+
+      - name: Run drift detection script
+        run: |
+          python scripts/check_schema_drift.py \
+            --track v1 \
+            --registry-url $REGISTRY_URL \
+            --emit-telemetry
+        continue-on-error: true  # Don't fail build on drift detection
+
+      - name: Upload drift report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-report
+          path: drift_report.json
+          retention-days: 90

@@ -27,6 +27,8 @@ Store successfully integrated into Core's cross-repo contract testing fanout sys
 |--------|---------|-----|
 | 1 | feat: add cross-repo contract testing (Phase 8.0C Store integration) | `2e3b3ab` |
 | 2 | fix: update Core dependency to base branch (fixes circular dependency) | `91f1dd0` |
+| 3 | docs: Phase 8.0C Store integration complete | `5bf9974` |
+| 4 | build: upgrade to Core v1.1.1 (Phase 8.0C cross-repo features) | `b9534fd` |
 
 ---
 
@@ -71,20 +73,35 @@ Store successfully integrated into Core's cross-repo contract testing fanout sys
 
 ---
 
-### Core Dependency Fix
+### Core Dependency Evolution
 
 **Problem:** Core v1.1.0 had circular dependency (Core → Store v0.2.0, Store v0.4.0 → Core v1.1.0)
 
-**Solution:** Updated to Core `base` branch:
+**Solution Path:**
+1. Initially updated to Core `base` branch (fixes circular dependency)
+2. Upgraded to Core **v1.1.1** (stable release with Phase 8.0C features)
+
 ```toml
-# Before
+# v1.1.0 (circular dependency)
 "market-data-core @ git+https://github.com/mjdevaccount/market-data-core.git@v1.1.0"
 
-# After
+# base branch (temporary fix)
 "market-data-core @ git+https://github.com/mjdevaccount/market-data-core.git@base"
+
+# v1.1.1 (final - includes cross-repo features)
+"market-data-core @ git+https://github.com/mjdevaccount/market-data-core.git@v1.1.1"
 ```
 
-**Result:** CI passes, no dependency conflicts
+**Result:** CI passes, no dependency conflicts, stable tagged release
+
+**Core v1.1.1 Features:**
+- ✅ Auto-fanout workflow
+- ✅ Reusable test runner
+- ✅ Matrix testing support
+- ✅ Cross-repo authentication
+- ✅ No Store circular dependency
+
+Release: https://github.com/mjdevaccount/market-data-core/releases/tag/v1.1.1
 
 ---
 

@@ -29,6 +29,8 @@ dev = [
   "ruff>=0.13.2",
   "black>=25.9.0",
   "pre-commit>=4.3.0",
+  "core-registry-client @ git+https://github.com/mjdevaccount/schema-registry-service.git#subdirectory=client_sdk",
+  "jsonschema>=4.0",
 ]
 
 [build-system]

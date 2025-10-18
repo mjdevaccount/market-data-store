@@ -1,0 +1,8 @@
+{
+  "registry_url": "https://schema-registry-service.fly.dev",
+  "track": "v1",
+  "fetched_at": "2025-10-18T19:36:14.558446+00:00",
+  "schemas_fetched": 3,
+  "schemas_failed": 0,
+  "failed_schemas": []
+}

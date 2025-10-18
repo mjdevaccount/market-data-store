@@ -1,0 +1,85 @@
+{
+  "$core_version": "1.1.2",
+  "$defs": {
+    "HealthComponent": {
+      "description": "Health status of a single component.\n\nExample:\n    ```python\n    component = HealthComponent(\n        name=\"ibkr_connection\",\n        state=\"healthy\",\n        details={\"connected\": \"true\", \"latency_ms\": \"12\"}\n    )\n    ```",
+      "properties": {
+        "details": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Component-specific details",
+          "title": "Details",
+          "type": "object"
+        },
+        "name": {
+          "description": "Component name",
+          "title": "Name",
+          "type": "string"
+        },
+        "state": {
+          "description": "Health state",
+          "enum": [
+            "healthy",
+            "degraded",
+            "unhealthy"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "state"
+      ],
+      "title": "HealthComponent",
+      "type": "object"
+    }
+  },
+  "$schema_id": "telemetry.HealthStatus",
+  "$track": "v1",
+  "description": "Overall health status for a service.\n\nExample:\n    ```python\n    status = HealthStatus(\n        service=\"market-data-core\",\n        state=\"healthy\",\n        components=[\n            HealthComponent(name=\"ibkr\", state=\"healthy\"),\n            HealthComponent(name=\"database\", state=\"healthy\"),\n        ],\n        version=\"1.1.0\",\n        ts=time.time()\n    )\n    ```",
+  "properties": {
+    "components": {
+      "description": "Component health list",
+      "items": {
+        "$ref": "#/$defs/HealthComponent"
+      },
+      "title": "Components",
+      "type": "array"
+    },
+    "service": {
+      "description": "Service name",
+      "title": "Service",
+      "type": "string"
+    },
+    "state": {
+      "description": "Aggregate health state",
+      "enum": [
+        "healthy",
+        "degraded",
+        "unhealthy"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "ts": {
+      "description": "Unix epoch seconds",
+      "title": "Ts",
+      "type": "number"
+    },
+    "version": {
+      "description": "Service version",
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "service",
+    "state",
+    "version",
+    "ts"
+  ],
+  "title": "HealthStatus",
+  "type": "object"
+}

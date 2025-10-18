@@ -1,0 +1,61 @@
+{
+  "$core_version": "1.1.2",
+  "$defs": {
+    "BackpressureLevel": {
+      "description": "Backpressure severity levels.",
+      "enum": [
+        "ok",
+        "soft",
+        "hard"
+      ],
+      "title": "BackpressureLevel",
+      "type": "string"
+    }
+  },
+  "$schema_id": "telemetry.FeedbackEvent",
+  "$track": "v1",
+  "description": "Backpressure feedback event from Store to Pipeline/Provider.\n\nEmitted by Store coordinators when queue levels cross thresholds.\nConsumed by Pipeline or Provider to adjust ingestion rates.\n\nExample:\n    ```python\n    event = FeedbackEvent(\n        coordinator_id=\"bars_coordinator_1\",\n        queue_size=850,\n        capacity=1000,\n        level=BackpressureLevel.soft,\n        source=\"store\",\n        ts=time.time()\n    )\n    await feedback_bus.publish(event)\n    ```",
+  "properties": {
+    "capacity": {
+      "description": "Maximum queue capacity",
+      "exclusiveMinimum": 0,
+      "title": "Capacity",
+      "type": "integer"
+    },
+    "coordinator_id": {
+      "description": "ID of the coordinator emitting feedback",
+      "title": "Coordinator Id",
+      "type": "string"
+    },
+    "level": {
+      "$ref": "#/$defs/BackpressureLevel",
+      "description": "Backpressure severity"
+    },
+    "queue_size": {
+      "description": "Current queue size",
+      "minimum": 0,
+      "title": "Queue Size",
+      "type": "integer"
+    },
+    "source": {
+      "default": "store",
+      "description": "Source component (store, pipeline, etc.)",
+      "title": "Source",
+      "type": "string"
+    },
+    "ts": {
+      "description": "Unix epoch seconds",
+      "title": "Ts",
+      "type": "number"
+    }
+  },
+  "required": [
+    "coordinator_id",
+    "queue_size",
+    "capacity",
+    "level",
+    "ts"
+  ],
+  "title": "FeedbackEvent",
+  "type": "object"
+}

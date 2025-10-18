@@ -30,6 +30,9 @@ src/market_data_store/coordinator/write_coordinator.py
 src/market_data_store/ingestion/__init__.py
 src/market_data_store/metrics/__init__.py
 src/market_data_store/metrics/registry.py
+src/market_data_store/pulse/__init__.py
+src/market_data_store/pulse/config.py
+src/market_data_store/pulse/publisher.py
 src/market_data_store/queries/__init__.py
 src/market_data_store/schema/__init__.py
 src/market_data_store/sinks/__init__.py

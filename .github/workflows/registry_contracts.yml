@@ -1,0 +1,105 @@
+name: Registry Contract Tests
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+  schedule:
+    # Run nightly to catch Registry schema drift
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  REGISTRY_URL: https://schema-registry-service.fly.dev
+
+jobs:
+  contracts-v1:
+    name: Contract Tests (v1 track)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install core-registry-client
+        run: |
+          pip install -U pip wheel
+          pip install git+https://github.com/mjdevaccount/schema-registry-service.git#subdirectory=client_sdk
+
+      - name: Install Store + dev deps
+        run: |
+          pip install -e .
+          pip install -r requirements-dev.txt || pip install pytest pytest-asyncio jsonschema
+
+      - name: Verify Registry availability
+        run: |
+          curl -sSf $REGISTRY_URL/health || echo "⚠️ Registry unavailable"
+        continue-on-error: true
+
+      - name: Fetch v1 schemas from Registry
+        run: |
+          python scripts/fetch_registry_schemas.py \
+            --track v1 \
+            --output tests/fixtures/schemas \
+            --registry-url $REGISTRY_URL
+
+      - name: Run contract tests (v1)
+        run: |
+          pytest tests/contracts/ -v --tb=short
+
+      - name: Upload schemas as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registry-schemas-v1
+          path: tests/fixtures/schemas/
+          retention-days: 30
+
+  contracts-v2:
+    name: Contract Tests (v2 track - preview)
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Allow v2 to fail during migration
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install core-registry-client
+        run: |
+          pip install -U pip wheel
+          pip install git+https://github.com/mjdevaccount/schema-registry-service.git#subdirectory=client_sdk
+
+      - name: Install Store + dev deps
+        run: |
+          pip install -e .
+          pip install -r requirements-dev.txt || pip install pytest pytest-asyncio jsonschema
+
+      - name: Fetch v2 schemas from Registry
+        run: |
+          python scripts/fetch_registry_schemas.py \
+            --track v2 \
+            --output tests/fixtures/schemas-v2 \
+            --registry-url $REGISTRY_URL
+
+      - name: Run contract tests (v2)
+        run: |
+          SCHEMA_DIR=tests/fixtures/schemas-v2 pytest tests/contracts/ -v --tb=short
+        continue-on-error: true
+
+      - name: Upload v2 schemas as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registry-schemas-v2
+          path: tests/fixtures/schemas-v2/
+          retention-days: 30

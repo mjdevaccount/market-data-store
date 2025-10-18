@@ -1,0 +1,17 @@
+name: dispatch_contracts
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_ref:
+        description: "Core ref (tag/branch/SHA)"
+        required: true
+        type: string
+        default: "base"
+
+jobs:
+  run-contracts:
+    name: "Contract tests vs Core ${{ inputs.core_ref }}"
+    uses: ./.github/workflows/_contracts_reusable.yml
+    with:
+      core_ref: ${{ inputs.core_ref }}

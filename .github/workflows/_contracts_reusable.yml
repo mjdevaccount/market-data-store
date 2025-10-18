@@ -1,0 +1,45 @@
+name: _contracts_reusable
+
+on:
+  workflow_call:
+    inputs:
+      core_ref:
+        description: "Git ref (tag/branch/SHA) of market-data-core"
+        required: true
+        type: string
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Store repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Core @ specified ref
+        run: |
+          pip install -U pip wheel
+          pip install "git+https://github.com/mjdevaccount/market-data-core.git@${{ inputs.core_ref }}"
+          echo "=== Installed Core version ==="
+          pip freeze | grep market-data-core
+
+      - name: Install Store + test dependencies
+        run: |
+          pip install -e .
+          pip install pytest pytest-asyncio
+
+      - name: Run contract tests
+        run: |
+          pytest tests/contracts/ -v --tb=short --color=yes
+
+      - name: Report results
+        if: always()
+        run: |
+          echo "::notice::Contract tests completed for Core ref ${{ inputs.core_ref }}"

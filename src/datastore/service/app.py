@@ -15,7 +15,7 @@ from datastore.config import get_settings
 # Core v1.1.0 telemetry contracts
 from market_data_core.telemetry import HealthStatus, HealthComponent
 
-app = FastAPI(title="market-data-store (control-plane)", version="0.4.0")
+app = FastAPI(title="market-data-store (control-plane)", version="0.5.0")
 
 # Minimal metrics
 registry = CollectorRegistry()
@@ -58,12 +58,15 @@ async def metrics_middleware(request: Request, call_next):
     return response
 
 
+@app.get("/health", response_model=HealthStatus)
 @app.get("/healthz", response_model=HealthStatus)
-async def healthz():
+async def health():
     """Health check using Core v1.1.0 HealthStatus.
 
     Returns structured health status with component breakdown.
     Backward compatible: old consumers can parse as dict.
+
+    Available at both /health (Docker) and /healthz (k8s) for compatibility.
     """
     STORE_UP.set(1)
 
@@ -93,7 +96,7 @@ async def healthz():
         service="market-data-store",
         state=overall_state,
         components=components,
-        version="0.4.0",
+        version="0.5.0",
         ts=time.time(),
     )
 
@@ -121,7 +124,7 @@ async def readyz():
             service="market-data-store",
             state="healthy",
             components=components,
-            version="0.4.0",
+            version="0.5.0",
             ts=time.time(),
         )
     except Exception as e:

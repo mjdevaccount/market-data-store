@@ -12,7 +12,7 @@ from loguru import logger
 import time
 from datastore.config import get_settings
 
-# Core v1.1.0 telemetry contracts
+# Core v1.2.8 telemetry contracts
 from market_data_core.telemetry import HealthStatus, HealthComponent
 
 app = FastAPI(title="market-data-store (control-plane)", version="0.5.0")
@@ -61,7 +61,7 @@ async def metrics_middleware(request: Request, call_next):
 @app.get("/health", response_model=HealthStatus)
 @app.get("/healthz", response_model=HealthStatus)
 async def health():
-    """Health check using Core v1.1.0 HealthStatus.
+    """Health check using Core v1.2.8 HealthStatus.
 
     Returns structured health status with component breakdown.
     Backward compatible: old consumers can parse as dict.
@@ -103,7 +103,7 @@ async def health():
 
 @app.get("/readyz", response_model=HealthStatus)
 async def readyz():
-    """Readiness check using Core v1.1.0 HealthStatus.
+    """Readiness check using Core v1.2.8 HealthStatus.
 
     Stricter than /healthz - returns 503 if any component is not healthy.
     Used for k8s readiness probes.

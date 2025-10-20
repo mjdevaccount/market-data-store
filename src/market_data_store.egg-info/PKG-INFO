@@ -4,7 +4,7 @@ Version: 0.5.0
 Summary: Data store control-plane (schema, migrations, policies, ops) for market-data.
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
-Requires-Dist: market-data-core@ git+https://github.com/mjdevaccount/market-data-core.git@v1.2.0-pulse
+Requires-Dist: market-data-core@ git+https://github.com/mjdevaccount/market-data-core.git@v1.2.8
 Requires-Dist: fastapi>=0.115
 Requires-Dist: uvicorn[standard]>=0.30
 Requires-Dist: sqlalchemy>=2.0
@@ -22,6 +22,8 @@ Provides-Extra: dev
 Requires-Dist: ruff>=0.13.2; extra == "dev"
 Requires-Dist: black>=25.9.0; extra == "dev"
 Requires-Dist: pre-commit>=4.3.0; extra == "dev"
+Requires-Dist: core-registry-client@ git+https://github.com/mjdevaccount/schema-registry-service.git#subdirectory=client_sdk ; extra == "dev"
+Requires-Dist: jsonschema>=4.0; extra == "dev"
 
 # 🚀 market-data-store
 

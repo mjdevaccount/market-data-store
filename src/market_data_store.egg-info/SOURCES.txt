@@ -41,6 +41,8 @@ src/market_data_store/sinks/base.py
 src/market_data_store/sinks/fundamentals_sink.py
 src/market_data_store/sinks/news_sink.py
 src/market_data_store/sinks/options_sink.py
+src/market_data_store/telemetry/__init__.py
+src/market_data_store/telemetry/drift_reporter.py
 src/mds_client/__init__.py
 src/mds_client/aclient.py
 src/mds_client/batch.py

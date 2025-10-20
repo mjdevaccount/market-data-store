@@ -15,7 +15,7 @@ from datastore.config import get_settings
 # Core v1.2.8 telemetry contracts
 from market_data_core.telemetry import HealthStatus, HealthComponent
 
-app = FastAPI(title="market-data-store (control-plane)", version="0.5.0")
+app = FastAPI(title="market-data-store (control-plane)", version="0.6.0")
 
 # Minimal metrics
 registry = CollectorRegistry()
@@ -96,7 +96,7 @@ async def health():
         service="market-data-store",
         state=overall_state,
         components=components,
-        version="0.5.0",
+        version="0.6.0",
         ts=time.time(),
     )
 
@@ -124,7 +124,7 @@ async def readyz():
             service="market-data-store",
             state="healthy",
             components=components,
-            version="0.5.0",
+            version="0.6.0",
             ts=time.time(),
         )
     except Exception as e:

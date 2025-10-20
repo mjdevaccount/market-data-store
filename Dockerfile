@@ -15,17 +15,15 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy dependency files
+# Copy dependency files and source code
 COPY pyproject.toml README.md ./
-
-# Install Python dependencies as root (for system packages)
-RUN pip install --no-cache-dir -U pip wheel && \
-    pip install --no-cache-dir -e .
-
-# Copy application code
 COPY src/ ./src/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./
+
+# Install Python dependencies and package (as root)
+RUN pip install --no-cache-dir -U pip wheel && \
+    pip install --no-cache-dir .
 
 # Change ownership to appuser
 RUN chown -R appuser:appuser /app

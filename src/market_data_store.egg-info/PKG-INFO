@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: market-data-store
-Version: 0.5.0
+Version: 0.6.0
 Summary: Data store control-plane (schema, migrations, policies, ops) for market-data.
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown

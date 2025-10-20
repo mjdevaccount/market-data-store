@@ -1,0 +1,104 @@
+name: Release to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Build and Publish to PyPI
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Verify version matches pyproject.toml
+        run: |
+          PYPROJECT_VERSION=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
+          TAG_VERSION="${{ steps.version.outputs.version }}"
+          if [ "$PYPROJECT_VERSION" != "$TAG_VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "   pyproject.toml: $PYPROJECT_VERSION"
+            echo "   Git tag:        $TAG_VERSION"
+            exit 1
+          fi
+          echo "✅ Version verified: $PYPROJECT_VERSION"
+
+      - name: Build package
+        run: |
+          python -m build
+          ls -lh dist/
+
+      - name: Check package
+        run: |
+          python -m twine check dist/*
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        run: |
+          python -m twine upload dist/*
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+          body: |
+            ## 🎉 Release ${{ steps.version.outputs.tag }}
+
+            **PyPI:** https://pypi.org/project/market-data-store/${{ steps.version.outputs.version }}/
+
+            ### Installation
+
+            ```bash
+            pip install market-data-store==${{ steps.version.outputs.version }}
+            ```
+
+            ### What's Changed
+
+            See [RELEASE_v${{ steps.version.outputs.version }}.md](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.tag }}/RELEASE_v${{ steps.version.outputs.version }}.md) for full release notes.
+
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/v0.5.0...${{ steps.version.outputs.tag }}
+          draft: false
+          prerelease: false
+
+      - name: Summary
+        run: |
+          echo "## 🎉 Release Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ steps.version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Published To" >> $GITHUB_STEP_SUMMARY
+          echo "- **PyPI:** https://pypi.org/project/market-data-store/${{ steps.version.outputs.version }}/" >> $GITHUB_STEP_SUMMARY
+          echo "- **GitHub:** https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Verification" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "pip install market-data-store==${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

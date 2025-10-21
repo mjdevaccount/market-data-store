@@ -1,6 +1,6 @@
 [project]
 name = "market-data-store"
-version = "0.6.2"
+version = "0.6.4"
 description = "Data store control-plane (schema, migrations, policies, ops) for market-data."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -11,6 +11,7 @@ dependencies = [
   "sqlalchemy>=2.0",
   "asyncpg>=0.29",
   "alembic>=1.13",
+  "psycopg2-binary>=2.9",
   "psycopg[binary]>=3.2",
   "psycopg-pool>=3.2",
   "typer>=0.12",

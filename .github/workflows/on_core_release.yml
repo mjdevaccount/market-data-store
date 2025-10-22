@@ -1,0 +1,97 @@
+name: Respond to Core Release and Auto-Publish
+
+on:
+  repository_dispatch:
+    types: [core_release]
+  # Also allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Core version to bump to (e.g., 1.2.9)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  bump-core:
+    name: Bump market-data-core and create PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract payload
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            ORIGIN="manual-trigger"
+          else
+            VERSION="${{ github.event.client_payload.version }}"
+            ORIGIN="${{ github.event.client_payload.origin }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "origin=$ORIGIN" >> $GITHUB_OUTPUT
+          echo "📦 Received version v$VERSION from $ORIGIN"
+
+      - name: Update dependency versions
+        run: |
+          VERSION=${{ steps.vars.outputs.version }}
+
+          # Update pyproject.toml
+          sed -i "s/market-data-core>=.*/market-data-core>=${VERSION},<2.0.0/" pyproject.toml
+
+          # Update requirements.txt
+          sed -i "s/market-data-core>=.*/market-data-core>=${VERSION},<2.0.0/" requirements.txt
+
+          echo "✅ Updated version references to ${VERSION}"
+
+          # Show changes
+          echo "--- Changes made ---"
+          git diff
+
+      - name: Create Pull Request
+        id: pr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump market-data-core to v${{ steps.vars.outputs.version }}"
+          title: "chore: bump market-data-core to v${{ steps.vars.outputs.version }}"
+          body: |
+            🤖 **Automated dependency update**
+
+            Triggered by `${{ steps.vars.outputs.origin }}` release.
+
+            **Changes:**
+            - ⬆️ Bumped `market-data-core` to `v${{ steps.vars.outputs.version }}`
+
+            **Files Updated:**
+            - `pyproject.toml`
+            - `requirements.txt`
+
+            ---
+
+            This PR will auto-merge once CI checks pass.
+          branch: "chore/bump-core-${{ steps.vars.outputs.version }}"
+          base: base
+          delete-branch: true
+          draft: false
+          labels: |
+            dependencies
+            automated
+
+      - name: Enable auto-merge
+        if: ${{ steps.pr.outputs.pull-request-number }}
+        uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          pull-request-number: ${{ steps.pr.outputs.pull-request-number }}
+          merge-method: squash
+
+  # Separate workflow to handle post-merge release
+  # This should be triggered by merge to base, not as a dependent job

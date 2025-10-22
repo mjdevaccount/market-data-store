@@ -1,0 +1,130 @@
+name: Auto-Release on Core Dependency Update
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - base
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  auto-release:
+    name: Tag & Publish New Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Only run if PR was merged and title contains "bump market-data-core"
+    if: |
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.title, 'bump market-data-core')
+
+    steps:
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          ref: base
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Bump version (patch)
+        id: bump
+        run: |
+          OLD_VERSION=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
+          NEW_VERSION=$(bash scripts/bump_version.sh)
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "old_version=$OLD_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml
+          git commit -m "chore(release): bump version to v${{ steps.bump.outputs.new_version }}"
+          git tag "v${{ steps.bump.outputs.new_version }}"
+          git push origin base
+          git push origin "v${{ steps.bump.outputs.new_version }}"
+
+      - name: Guard duplicate tags
+        run: |
+          if git rev-parse "v${{ steps.bump.outputs.new_version }}" >/dev/null 2>&1; then
+            echo "⚠️ Tag v${{ steps.bump.outputs.new_version }} already exists — skipping publish."
+            exit 0
+          fi
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build package
+        run: |
+          python -m build
+          ls -lh dist/
+
+      - name: Check package
+        run: |
+          python -m twine check dist/*
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          python -m twine upload dist/* --skip-existing
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.bump.outputs.new_version }}
+          name: Release v${{ steps.bump.outputs.new_version }}
+          body: |
+            ## 🎉 Automated Release v${{ steps.bump.outputs.new_version }}
+
+            **Type:** Dependency Update
+            **Previous Version:** v${{ steps.bump.outputs.old_version }}
+
+            ### What's Changed
+            - ⬆️ Updated `market-data-core` dependency
+            - 🔄 Auto-released following successful CI checks
+
+            ### Installation
+            ```bash
+            pip install market-data-store==${{ steps.bump.outputs.new_version }}
+            ```
+
+            **PyPI:** https://pypi.org/project/market-data-store/${{ steps.bump.outputs.new_version }}/
+          draft: false
+          prerelease: false
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+
+      - name: Log completion
+        run: |
+          echo "## 🎉 Auto-Release Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.bump.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Previous:** ${{ steps.bump.outputs.old_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Published To" >> $GITHUB_STEP_SUMMARY
+          echo "- **PyPI:** https://pypi.org/project/market-data-store/${{ steps.bump.outputs.new_version }}/" >> $GITHUB_STEP_SUMMARY
+          echo "- **GitHub:** https://github.com/${{ github.repository }}/releases/tag/v${{ steps.bump.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Verification" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "pip install market-data-store==${{ steps.bump.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "✅ Published v${{ steps.bump.outputs.new_version }} to PyPI"
+
+      - name: Show environment summary
+        if: always()
+        run: |
+          echo "Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "Triggered by: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "Version: ${{ steps.bump.outputs.new_version || steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY

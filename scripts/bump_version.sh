@@ -13,5 +13,5 @@ NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
 
 sed -i "s/version = .*/version = \"${NEW_VERSION}\"/" "$FILE"
 
-echo "🔢 Bumped version: ${OLD_VERSION} → ${NEW_VERSION}"
+echo "🔢 Bumped version: ${OLD_VERSION} → ${NEW_VERSION}" >&2
 echo "$NEW_VERSION"

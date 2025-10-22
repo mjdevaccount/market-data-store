@@ -43,8 +43,8 @@ jobs:
         run: |
           VERSION=${{ steps.vars.outputs.version }}
 
-          # Update pyproject.toml
-          sed -i "s/market-data-core>=.*/market-data-core>=${VERSION},<2.0.0/" pyproject.toml
+          # Update pyproject.toml (preserve closing quote and comma)
+          sed -i "s/\"market-data-core>=.*\",/\"market-data-core>=${VERSION},<2.0.0\",/" pyproject.toml
 
           # Update requirements.txt
           sed -i "s/market-data-core>=.*/market-data-core>=${VERSION},<2.0.0/" requirements.txt

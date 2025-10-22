@@ -43,7 +43,7 @@
     },
     {
       "path": "src/datastore/service/app.py",
-      "sha": "1aff1c9f9ec3659f",
+      "sha": "d84d976d3b92cd0b",
       "summary": "from fastapi import FastAPI, Response, status, HTTPException, Depends, Request"
     },
     {
@@ -78,7 +78,7 @@
     },
     {
       "path": "src/market_data_store/coordinator/queue.py",
-      "sha": "0fc12a8a3425d1a1",
+      "sha": "a6bd91971b71f4df",
       "summary": "from __future__ import annotations"
     },
     {
@@ -248,17 +248,17 @@
     },
     {
       "path": "migrations/env.py",
-      "sha": "634d1db26808be1c",
+      "sha": "54fcbcefd9313d9a",
       "summary": "from logging.config import fileConfig"
     },
     {
       "path": "migrations/README",
-      "sha": "85e33379b6309468",
+      "sha": "51b990c7e2cc2e64",
       "summary": "Generic single-database configuration."
     },
     {
       "path": "migrations/script.py.mako",
-      "sha": "d38920781b4d31ae",
+      "sha": "a60ec52443699fdc",
       "summary": "\"\"\"${message}"
     },
     {
@@ -268,7 +268,7 @@
     },
     {
       "path": "cursorrules/index.mdc",
-      "sha": "b42794c93552188c",
+      "sha": "19970b6ec8cf183b",
       "summary": "# Always-Active Rules (market-data-store)"
     },
     {
@@ -278,37 +278,37 @@
     },
     {
       "path": "cursorrules/rules/api_control_plane.mdc",
-      "sha": "dedf32997c3826c3",
+      "sha": "48195fa5c4a2884f",
       "summary": "# Rule: API Control-Plane"
     },
     {
       "path": "cursorrules/rules/cli_implementation.mdc",
-      "sha": "27ed620fa21f0999",
+      "sha": "6aca3a8682e9b36d",
       "summary": "# Rule: CLI Implementation Details"
     },
     {
       "path": "cursorrules/rules/coding_standards.mdc",
-      "sha": "f924c740c607d24e",
+      "sha": "8267da8b4d9aad2f",
       "summary": "# Rule: Coding Standards"
     },
     {
       "path": "cursorrules/rules/coordinator_layer.mdc",
-      "sha": "4ee32918e2eb0f93",
+      "sha": "ece098e10a108d29",
       "summary": "# Coordinator Layer Rules (Phase 4.2A)"
     },
     {
       "path": "cursorrules/rules/database_schema.mdc",
-      "sha": "cc8bc53013ee43ab",
+      "sha": "958d183487e8afa8",
       "summary": "# Rule: Database Schema & CLI"
     },
     {
       "path": "cursorrules/rules/datastore_lib_rules.mdc",
-      "sha": "0a681a1ae35f130d",
+      "sha": "ba6cb258ee01a2ba",
       "summary": "# Rule: Datastore Library (Control Plane)"
     },
     {
       "path": "cursorrules/rules/environment_setup.mdc",
-      "sha": "28b5b265db476e75",
+      "sha": "e34b3242a7ac6e8a",
       "summary": "# Rule: Environment Setup"
     },
     {
@@ -318,37 +318,37 @@
     },
     {
       "path": "cursorrules/rules/mds_client_library.mdc",
-      "sha": "13b37a3cb2d68ef1",
+      "sha": "528cc3b05f925044",
       "summary": "# Rule: MDS Client Library"
     },
     {
       "path": "cursorrules/rules/migrations_rules.mdc",
-      "sha": "db6e6682a0055bca",
+      "sha": "5ba3aadcc578e2ac",
       "summary": "# Rule: Migrations Framework"
     },
     {
       "path": "cursorrules/rules/policies_aggregates.mdc",
-      "sha": "6e42fd97a39673ea",
+      "sha": "4cb7f1d8f07aacaf",
       "summary": "# Rule: Timescale Policies & Aggregates"
     },
     {
       "path": "cursorrules/rules/readme_generation.mdc",
-      "sha": "fe32c752c46a7913",
+      "sha": "e0670ab7e0e13d29",
       "summary": "# README Generation Rules"
     },
     {
       "path": "cursorrules/rules/sinks_layer.mdc",
-      "sha": "a0858dacc3223c6a",
+      "sha": "7007a707fbffbcd3",
       "summary": "# Rule: Async Sinks Layer"
     },
     {
       "path": "cursorrules/rules/solution_lookup.mdc",
-      "sha": "d00503caa058af2e",
+      "sha": "81699c7b31a2a1d3",
       "summary": "# Rule: Solution Lookup"
     },
     {
       "path": "cursorrules/rules/table_schemas.mdc",
-      "sha": "4a061d9321044239",
+      "sha": "4008c2b7b956425b",
       "summary": "# Rule: Table Schemas"
     }
   ]

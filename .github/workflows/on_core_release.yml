@@ -78,7 +78,7 @@ jobs:
 
             This PR will auto-merge once CI checks pass.
           branch: "chore/bump-core-${{ steps.vars.outputs.version }}"
-          base: base
+          base: master
           delete-branch: true
           draft: false
           labels: |

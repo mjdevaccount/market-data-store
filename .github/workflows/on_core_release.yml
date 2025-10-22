@@ -59,7 +59,7 @@ jobs:
         id: pr
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.REPO_TOKEN }}
           commit-message: "chore: bump market-data-core to v${{ steps.vars.outputs.version }}"
           title: "chore: bump market-data-core to v${{ steps.vars.outputs.version }}"
           body: |
@@ -89,7 +89,7 @@ jobs:
         if: ${{ steps.pr.outputs.pull-request-number }}
         uses: peter-evans/enable-pull-request-automerge@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.REPO_TOKEN }}
           pull-request-number: ${{ steps.pr.outputs.pull-request-number }}
           merge-method: squash
 

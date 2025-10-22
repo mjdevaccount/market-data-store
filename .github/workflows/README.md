@@ -1,59 +1,125 @@
-# Workflows
+# Automated Dependency Updates & Releases
 
-## Structure
+## ✅ Complete Automation Chain
 
-```
-.github/workflows/
-  on_core_release.yml          # Receives dispatch → updates deps → creates PR
-  auto_release_on_merge.yml    # Merged PR → bump version → publish to PyPI
-  release.yml                  # Manual tag → publish to PyPI
-  ci.yml                       # Tests on push/PR
-scripts/
-  bump_version.sh              # Reusable version bump logic
-```
+This repository has a fully automated workflow for handling Core dependency updates:
 
-## Automated Dependency Updates & Releases
-
-### `on_core_release.yml`
-- **Trigger:** `repository_dispatch` event from `market-data-core` (or manual)
-- **Action:** Updates `market-data-core` dependency → creates PR → auto-merges after CI
-
-### `auto_release_on_merge.yml`
-- **Trigger:** PR with "bump market-data-core" merged to `base`
-- **Action:** Bumps version → tags → publishes to PyPI → creates GitHub Release
-
-### `release.yml`
-- **Trigger:** Manual tag push (`git tag vX.Y.Z && git push --tags`)
-- **Action:** Builds and publishes to PyPI
-
-### `ci.yml`
-- **Trigger:** Push or PR
-- **Action:** Runs tests
-
-## Setup Required
-
-1. **Branch protection for `base`:** Require "test" status check
-2. **Enable auto-merge:** Settings → General → Allow auto-merge
-3. **Secrets:**
-   - `PYPI_TOKEN` - PyPI API token (rename from `PYPI_API_TOKEN`)
-   - `GITHUB_TOKEN` - Auto-provided
-
-## Core Dispatch Setup
-
-Add to `market-data-core/.github/workflows/release.yml`:
-
-```yaml
-- name: Notify downstream repos
-  uses: peter-evans/repository-dispatch@v2
-  with:
-    token: ${{ secrets.DISPATCH_TOKEN }}
-    repository: mjdevaccount/market-data-store
-    event-type: core_release
-    client-payload: |
-      {
-        "version": "${{ steps.version.outputs.version }}",
-        "origin": "market-data-core"
-      }
+```mermaid
+graph LR
+    A[Core Release] --> B[on_core_release.yml]
+    B --> C[Create PR]
+    C --> D[Auto-Merge]
+    D --> E[auto_release_on_merge.yml]
+    E --> F[Bump Version]
+    F --> G[PyPI Publish]
+    G --> H[GitHub Release]
 ```
 
-Core needs `DISPATCH_TOKEN` secret (Personal Access Token with `repo` scope).
+## 📋 Workflows
+
+### 1. `on_core_release.yml`
+- **Trigger**: `workflow_dispatch` (manual) or `repository_dispatch` (from Core)
+- **Actions**:
+  - Updates `market-data-core` dependency in `pyproject.toml` and `requirements.txt`
+  - Creates PR with automated labels
+  - Enables auto-merge (squash)
+- **Key**: Uses `REPO_TOKEN` (PAT) to allow workflow chaining
+
+### 2. `auto_release_on_merge.yml`
+- **Trigger**: Push to `master` when `pyproject.toml` changes
+- **Actions**:
+  - Bumps patch version (via `scripts/bump_version.sh`)
+  - Creates git tag
+  - Builds and publishes to PyPI
+  - Creates GitHub Release with artifacts
+- **Key**: Uses `PYPI_API_TOKEN` for PyPI uploads
+
+## 🔐 Required Secrets
+
+| Secret | Scope | Purpose |
+|--------|-------|---------|
+| `REPO_TOKEN` | repo, workflows | PAT for creating PRs that trigger other workflows |
+| `PYPI_API_TOKEN` | N/A | Production PyPI upload token |
+| `TEST_PYPI_API_TOKEN` | N/A | Test PyPI upload token (optional) |
+
+## 🚀 Testing the Automation
+
+```bash
+# Test with an existing Core version
+gh workflow run on_core_release.yml --ref master -f version=1.2.12
+
+# Expected:
+# 1. PR created and merged
+# 2. Version auto-bumped
+# 3. Published to PyPI
+# 4. GitHub Release created
+```
+
+## 📦 Deploying to Other Repos
+
+To replicate this automation in `market-data-pipeline` or `market-data-orchestrator`:
+
+1. **Copy files**:
+   - `.github/workflows/on_core_release.yml`
+   - `.github/workflows/auto_release_on_merge.yml`
+   - `scripts/bump_version.sh`
+
+2. **Update workflow references**:
+   - Change `market-data-store` to target repo name in release bodies
+
+3. **Set secrets**:
+   - `REPO_TOKEN` - Same PAT can be used across repos
+   - `PYPI_API_TOKEN` - Create separate token for each package
+
+4. **Enable settings**:
+   - Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests"
+   - Settings → Branches → Enable auto-merge for the default branch
+
+## 🧠 Key Technical Details
+
+### Why REPO_TOKEN instead of GITHUB_TOKEN?
+
+GitHub security: workflows triggered by `GITHUB_TOKEN` cannot trigger other workflows. Using a PAT (`REPO_TOKEN`) allows the PR merge from `on_core_release.yml` to trigger `auto_release_on_merge.yml`.
+
+### Version Bumping
+
+The `scripts/bump_version.sh` script:
+- Handles both GNU and BSD `sed` (cross-platform)
+- Bumps patch version only (can be modified for minor/major)
+- Robust error handling with `set -euo pipefail`
+- Outputs only version number to stdout (for capture in workflows)
+
+### Duplicate Tag Protection
+
+The auto-release workflow checks for existing tags before creating new ones, preventing accidental overwrites or re-publishes.
+
+## 📊 Monitoring
+
+View workflow runs:
+```bash
+# List all workflow runs
+gh run list --limit 10
+
+# View specific workflow
+gh workflow view on_core_release.yml
+
+# Check auto-release runs
+gh run list --workflow="Auto-Release on Core Dependency Update"
+```
+
+## ✅ Verification
+
+After a successful run, verify:
+```bash
+# Check latest version
+grep 'version = ' pyproject.toml
+
+# Check dependency
+grep 'market-data-core' pyproject.toml
+
+# View latest release
+gh release view --json tagName,publishedAt,url
+
+# Check PyPI
+# Visit https://pypi.org/project/market-data-store/
+```

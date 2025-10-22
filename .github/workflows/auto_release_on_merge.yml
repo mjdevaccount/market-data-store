@@ -96,7 +96,7 @@ jobs:
         if: success()
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+          token: ${{ secrets.REPO_TOKEN }}
           repository: mjdevaccount/market-data-infra
           event-type: downstream_release
           client-payload: >

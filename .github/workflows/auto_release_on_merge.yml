@@ -1,10 +1,11 @@
 name: Auto-Release on Core Dependency Update
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches:
       - master
+    paths:
+      - 'pyproject.toml'
 
 permissions:
   contents: write
@@ -15,10 +16,6 @@ jobs:
     name: Tag & Publish New Release
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Only run if PR was merged and title contains "bump market-data-core"
-    if: |
-      github.event.pull_request.merged == true &&
-      contains(github.event.pull_request.title, 'bump market-data-core')
 
     steps:
       - name: Checkout master branch

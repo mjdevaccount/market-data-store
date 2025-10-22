@@ -97,7 +97,7 @@ jobs:
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.REPO_TOKEN }}
-          repository: mjdevaccount/market-data-infra
+          repository: mjdevaccount/market_data_infra
           event-type: downstream_release
           client-payload: >
             {"origin": "market-data-store", "version": "${{ steps.bump.outputs.new_version }}"}

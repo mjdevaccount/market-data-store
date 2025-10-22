@@ -32,10 +32,8 @@ jobs:
       - name: Bump version (patch)
         id: bump
         run: |
-          OLD_VERSION=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
           NEW_VERSION=$(bash scripts/bump_version.sh)
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "old_version=$OLD_VERSION" >> $GITHUB_OUTPUT
 
       - name: Commit and tag
         run: |

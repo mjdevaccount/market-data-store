@@ -92,6 +92,16 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
 
+      - name: Notify Infra Repository
+        if: success()
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+          repository: mjdevaccount/market-data-infra
+          event-type: downstream_release
+          client-payload: >
+            {"origin": "market-data-store", "version": "${{ steps.bump.outputs.new_version }}"}
+
       - name: Show environment summary
         if: always()
         run: |

@@ -1,0 +1,54 @@
+name: Notify Infra on Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to report (without 'v' prefix)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  notify-infra:
+    name: Update Infra Registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Extract version
+        id: version
+        run: |
+          if [ -n "${{ github.event.release.tag_name }}" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          elif [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            echo "❌ No version found"
+            exit 1
+          fi
+          # Remove 'v' prefix if present
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Version: $VERSION"
+
+      - name: Notify market_data_infra
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: mjdevaccount/market_data_infra
+          event-type: downstream_release
+          client-payload: >
+            {
+              "origin": "${{ github.event.repository.name }}",
+              "version": "${{ steps.version.outputs.version }}"
+            }
+
+      - name: Log completion
+        run: |
+          echo "✅ Notified market_data_infra"
+          echo "   Repo: ${{ github.event.repository.name }}"
+          echo "   Version: ${{ steps.version.outputs.version }}"

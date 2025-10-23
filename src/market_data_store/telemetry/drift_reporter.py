@@ -168,6 +168,8 @@ class DriftReporter:
 
             # Create event envelope
             envelope = EventEnvelope(
+                id="",  # Bus will generate
+                ts=time.time(),
                 meta=EventMeta(
                     event_type="telemetry.schema_drift",
                     source="market-data-store",

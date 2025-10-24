@@ -1,11 +1,11 @@
 [project]
 name = "market-data-store"
-version = "0.6.21"
+version = "0.6.24"
 description = "Data store control-plane (schema, migrations, policies, ops) for market-data."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "market-data-core>=1.2.31,<2.0.0",
+  "market-data-core>=1.2.35,<2.0.0",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
   "sqlalchemy>=2.0",

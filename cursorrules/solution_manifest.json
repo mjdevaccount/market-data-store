@@ -283,12 +283,12 @@
     },
     {
       "path": "migrations/versions/0002_add_bars_ohlcv_and_job_runs.py",
-      "sha": "781791fd7ea4f8e2",
+      "sha": "f0683979dafc1eec",
       "summary": "\"\"\"Add bars_ohlcv and job_runs tables for config-driven pipeline"
     },
     {
       "path": "migrations/versions/0003_add_signals_table.py",
-      "sha": "66a75d9c9ef3dad6",
+      "sha": "4f83fc0f34182d94",
       "summary": "\"\"\"Add signals table for streaming inference signals"
     },
     {

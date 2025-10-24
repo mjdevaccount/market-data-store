@@ -44,7 +44,7 @@ def upgrade() -> None:
         """
         SELECT create_hypertable(
             'signals',
-            by_range('ts'),
+            'ts',
             chunk_time_interval => INTERVAL '7 days',
             if_not_exists => TRUE
         );

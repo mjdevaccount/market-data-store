@@ -14,6 +14,62 @@
 
 > ⚡ NEW: **Async Sinks Layer** (Phase 4.1) - Stream-oriented ingestion with automatic Prometheus metrics, error handling, and flow control readiness.
 
+> 🔥 **LATEST**: **Config-Driven Pipeline Support** (Phase 11.3) - Provider-based OHLCV ingestion with `bars_ohlcv` table, `StoreClient`, audit-grade job tracking, diff-aware upserts, and compression policies. Supports 10K+ bars/sec throughput for live and backfill operations.
+
+---
+
+## 🎯 **Dual Ingestion Architecture**
+
+This store supports **two parallel ingestion paths**:
+
+### **Path 1: Tenant-Based System** (Existing)
+- **Tables**: `bars`, `fundamentals`, `news`, `options_snap`
+- **Client**: `mds_client` (MDS/AMDS) with RLS
+- **Use Case**: Multi-tenant analytics platform
+- **Features**: Row-level security, tenant isolation, comprehensive data types
+
+### **Path 2: Provider-Based Pipeline** (NEW - Phase 11.3)
+- **Tables**: `bars_ohlcv`, `job_runs`
+- **Client**: `datastore.StoreClient` / `AsyncStoreClient`
+- **Use Case**: Config-driven market data pipeline (live + backfill)
+- **Features**:
+  - 🚀 High throughput (10K+ bars/sec)
+  - 🔄 Diff-aware upserts (replay-safe)
+  - 📦 Smart batching (COPY for 1000+ rows)
+  - 📊 Job execution tracking with heartbeats
+  - 🗜️ Automatic compression (90-day hot tier)
+  - 🔍 Prometheus metrics
+
+**Architecture Diagram:**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        market_data_store                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│  ┌───────────────────────────────┐  ┌──────────────────────────────┐│
+│  │ Tenant-Based (Existing)       │  │ Provider-Based (NEW)         ││
+│  │ ────────────────────────      │  │ ─────────────────────        ││
+│  │                               │  │                              ││
+│  │ mds_client (AMDS)             │  │ StoreClient                  ││
+│  │   ↓                           │  │   ↓                          ││
+│  │ bars (tenant_id, RLS)         │  │ bars_ohlcv (provider-based)  ││
+│  │ fundamentals                  │  │ job_runs (audit trail)       ││
+│  │ news                          │  │                              ││
+│  │ options_snap                  │  │ Features:                    ││
+│  │                               │  │ • Diff-aware upserts         ││
+│  │ Features:                     │  │ • Smart batching             ││
+│  │ • Multi-tenant isolation      │  │ • Compression (90d)          ││
+│  │ • RLS enforcement             │  │ • Heartbeat tracking         ││
+│  │ • Comprehensive data types    │  │ • Config fingerprinting      ││
+│  └───────────────────────────────┘  └──────────────────────────────┘│
+│                                                                       │
+│  TimescaleDB (Hypertables + Compression)                             │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## 📂 Project Layout & Description
 
 This repository is structured as a **control-plane** with clear separation between infrastructure, schema management, service layer, and automation rules.
@@ -275,7 +331,203 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+---
+
+## 🆕 **Config-Driven Pipeline Usage** (Phase 11.3)
+
+### StoreClient - Provider-Based Ingestion
+
+For config-driven pipeline operations (live/backfill), use `StoreClient` instead of `mds_client`:
+
+```python
+from datetime import datetime, timezone
+from dataclasses import dataclass
+from datastore import StoreClient, JobRunTracker, compute_config_fingerprint
+
+# Your provider returns bars matching this protocol
+@dataclass
+class Bar:
+    provider: str
+    symbol: str
+    interval: str  # "5min", "1d", etc.
+    ts: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+# Example: Write bars from IBKR provider
+def ingest_live_bars(config, bars):
+    """Ingest bars with job tracking and config fingerprinting."""
+
+    # Start tracking job run
+    tracker = JobRunTracker(config.database_url)
+    fingerprint = compute_config_fingerprint(config.dict())
+
+    run_id = tracker.start_run(
+        job_name="live_us_equities_5min",
+        dataset_name="us_equities_5min",
+        provider="ibkr_primary",
+        mode="live",
+        config_fingerprint=fingerprint,
+        pipeline_version="v1.2.0",
+        metadata={"git_hash": "abc123", "container_id": "xyz"}
+    )
+
+    try:
+        # Write bars with diff-aware upserts
+        with StoreClient(config.database_url) as client:
+            count = client.write_bars(bars, batch_size=1000)
+
+        # Update progress with heartbeat
+        symbols = list(set(b.symbol for b in bars))
+        min_ts = min(b.ts for b in bars)
+        max_ts = max(b.ts for b in bars)
+
+        tracker.update_progress(
+            run_id=run_id,
+            rows_written=count,
+            symbols=symbols,
+            min_ts=min_ts,
+            max_ts=max_ts,
+            heartbeat=True
+        )
+
+        # Mark as success
+        tracker.complete_run(run_id, status="success")
+        print(f"✅ Wrote {count} bars (run_id={run_id})")
+
+    except Exception as e:
+        tracker.complete_run(run_id, status="failure", error_message=str(e))
+        raise
+
+# Example bars from IBKR
+bars = [
+    Bar(
+        provider="ibkr_primary",
+        symbol="SPY",
+        interval="5min",
+        ts=datetime(2025, 1, 1, 9, 30, tzinfo=timezone.utc),
+        open=450.0,
+        high=451.0,
+        low=449.0,
+        close=450.5,
+        volume=1000000
+    ),
+    # ... more bars
+]
+
+ingest_live_bars(config, bars)
+```
+
+### AsyncStoreClient - High-Performance Async Ingestion
+
+```python
+import asyncio
+from datastore import AsyncStoreClient, JobRunTracker
+
+async def ingest_bars_async(bars, db_uri):
+    """Async ingestion with automatic batching."""
+
+    async with AsyncStoreClient(db_uri) as client:
+        count = await client.write_bars(bars, batch_size=1000)
+
+    print(f"✅ Wrote {count} bars asynchronously")
+
+# Run async
+asyncio.run(ingest_bars_async(bars, "postgresql://..."))
+```
+
+### Key Features
+
+| Feature | Description | Benefit |
+|---------|-------------|---------|
+| **Diff-aware upserts** | `IS DISTINCT FROM` in SQL | Only updates when values change → true idempotency |
+| **Smart batching** | COPY for 1000+, executemany otherwise | Optimal performance for any batch size |
+| **Protocol-based** | Duck typing via `Bar` protocol | No hard dependency on specific classes |
+| **Job tracking** | Full lifecycle with heartbeats | Audit trail + stuck job detection |
+| **Compression** | 90-day hot tier policy | Automatic disk savings for historical data |
+| **Metrics** | Prometheus counters/histograms | Observability out of the box |
+
+### CLI - Job Management
+
+```bash
+# List recent job runs
+datastore job-runs-list --limit 50
+
+# Inspect specific run
+datastore job-runs-inspect 123
+
+# Find stuck jobs (no heartbeat for 15m)
+datastore job-runs-stuck --timeout-minutes 15
+
+# View 24h summary
+datastore job-runs-summary
+
+# Cleanup old runs
+datastore job-runs-cleanup --older-than-days 90 --confirm
+```
+
+### Tables Created by Migration 0002
+
+#### `bars_ohlcv` - Provider-Based OHLCV Storage
+
+```sql
+CREATE TABLE bars_ohlcv (
+    provider   TEXT NOT NULL,
+    symbol     TEXT NOT NULL CHECK (symbol = UPPER(symbol)),
+    interval   TEXT NOT NULL,
+    ts         TIMESTAMPTZ NOT NULL,
+    open       DOUBLE PRECISION NOT NULL,
+    high       DOUBLE PRECISION NOT NULL,
+    low        DOUBLE PRECISION NOT NULL,
+    close      DOUBLE PRECISION NOT NULL,
+    volume     DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (provider, symbol, interval, ts)
+);
+```
+
+**Features:**
+- TimescaleDB hypertable (7-day chunks)
+- Compression after 90 days (segmentby `provider,symbol,interval`)
+- Uppercase symbol constraint
+- No tenant isolation (system-wide)
+
+#### `job_runs` - Audit-Grade Job Tracking
+
+```sql
+CREATE TABLE job_runs (
+    id                  BIGSERIAL PRIMARY KEY,
+    job_name            TEXT NOT NULL,
+    provider            TEXT,
+    status              TEXT NOT NULL CHECK (status IN ('running', 'success', 'failure', 'cancelled')),
+    config_fingerprint  TEXT,
+    pipeline_version    TEXT,
+    rows_written        BIGINT DEFAULT 0,
+    symbols             TEXT[],
+    min_ts              TIMESTAMPTZ,
+    max_ts              TIMESTAMPTZ,
+    metadata            JSONB DEFAULT '{}'::jsonb,
+    started_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at        TIMESTAMPTZ,
+    elapsed_ms          BIGINT GENERATED ALWAYS AS (...) STORED  -- auto-computed
+);
+```
+
+**Features:**
+- Heartbeat tracking via `metadata->>'last_heartbeat'`
+- Config fingerprinting for reproducibility
+- Derived `elapsed_ms` column
+- GIN index on metadata for fast heartbeat queries
+
+---
+
 ### Metrics Exported
+
+#### Sinks Metrics (Tenant-Based System)
 
 Sinks automatically register metrics to the global Prometheus registry:
 
@@ -286,6 +538,18 @@ sink_writes_total{sink="bars|options|fundamentals|news", status="success|failure
 # Write latency (histogram)
 sink_write_latency_seconds{sink="bars|options|fundamentals|news"}
 ```
+
+#### StoreClient Metrics (Provider-Based Pipeline)
+
+```promql
+# Total bars written (counter)
+store_bars_written_total{method="COPY|UPSERT", status="success|failure"}
+
+# Write latency (histogram)
+store_bars_write_latency_seconds{method="COPY|UPSERT"}
+```
+
+**Key Insight**: `method` label shows whether COPY (1000+ rows) or UPSERT (< 1000 rows) was used, enabling performance tuning.
 
 **Scrape at**: `http://localhost:8081/metrics` (FastAPI control-plane)
 

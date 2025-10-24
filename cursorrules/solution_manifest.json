@@ -8,18 +8,23 @@
     },
     {
       "path": "src/datastore/cli.py",
-      "sha": "5c67b34b25308bbe",
+      "sha": "7ce075716a945195",
       "summary": "import sys"
     },
     {
       "path": "src/datastore/config.py",
-      "sha": "39d6f3aa43a27140",
+      "sha": "038dc07cc93fc104",
       "summary": "from pydantic_settings import BaseSettings"
     },
     {
       "path": "src/datastore/idempotency.py",
       "sha": "23436558ad810a28",
       "summary": "# Placeholder for idempotency helpers (hashing keys, conflict handling)."
+    },
+    {
+      "path": "src/datastore/job_tracking.py",
+      "sha": "691c551378ef9d75",
+      "summary": "\"\"\""
     },
     {
       "path": "src/datastore/reads.py",
@@ -33,17 +38,17 @@
     },
     {
       "path": "src/datastore/writes.py",
-      "sha": "9736a6efba67fc7a",
-      "summary": "# Intentionally minimal; orchestrator will import this package to write data."
+      "sha": "54ad6389c309474e",
+      "summary": "\"\"\""
     },
     {
       "path": "src/datastore/__init__.py",
-      "sha": "fe9cca32e79c2b83",
-      "summary": "__all__ = [\"config\"]"
+      "sha": "4d64ae13c831a20b",
+      "summary": "\"\"\""
     },
     {
       "path": "src/datastore/service/app.py",
-      "sha": "d84d976d3b92cd0b",
+      "sha": "1aff1c9f9ec3659f",
       "summary": "from fastapi import FastAPI, Response, status, HTTPException, Depends, Request"
     },
     {
@@ -178,7 +183,7 @@
     },
     {
       "path": "src/market_data_store/telemetry/drift_reporter.py",
-      "sha": "9e34ae7bd4cf92b0",
+      "sha": "80c492beb3c1dcc6",
       "summary": "\"\"\"Schema drift detection and telemetry reporting."
     },
     {
@@ -265,6 +270,11 @@
       "path": "migrations/versions/0001_initial.py",
       "sha": "0822a1ac16317fb9",
       "summary": "\"\"\"Initial schema for market-data-store"
+    },
+    {
+      "path": "migrations/versions/0002_add_bars_ohlcv_and_job_runs.py",
+      "sha": "781791fd7ea4f8e2",
+      "summary": "\"\"\"Add bars_ohlcv and job_runs tables for config-driven pipeline"
     },
     {
       "path": "cursorrules/index.mdc",

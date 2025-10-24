@@ -167,15 +167,20 @@ class DriftReporter:
             }
 
             # Create event envelope
+            meta = EventMeta(
+                schema_id="telemetry.schema_drift",
+                track=local_snapshot.track,
+                headers={
+                    "event_type": "telemetry.schema_drift",
+                    "source": "market-data-store",
+                },
+            )
+
             envelope = EventEnvelope(
                 id="",  # Bus will generate
+                key=local_snapshot.name,
                 ts=time.time(),
-                meta=EventMeta(
-                    event_type="telemetry.schema_drift",
-                    source="market-data-store",
-                    timestamp=time.time(),
-                    schema_id="telemetry.schema_drift",  # Required by EventMeta
-                ),
+                meta=meta,
                 payload=payload,
             )
 

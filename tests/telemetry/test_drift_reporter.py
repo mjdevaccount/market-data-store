@@ -216,8 +216,11 @@ class TestPulseEventEmission:
         call_args = drift_reporter_with_pulse.publisher._bus.publish.call_args
         envelope = call_args[0][0]
 
-        assert envelope.meta.event_type == "telemetry.schema_drift"
-        assert envelope.meta.source == "market-data-store"
+        # EventMeta stores event_type and source in headers
+        assert envelope.meta.schema_id == "telemetry.schema_drift"
+        assert envelope.meta.track == "v1"
+        assert envelope.meta.headers["event_type"] == "telemetry.schema_drift"
+        assert envelope.meta.headers["source"] == "market-data-store"
         assert envelope.payload["repo"] == "market-data-store"
         assert envelope.payload["schema"] == "telemetry.FeedbackEvent"
         assert envelope.payload["track"] == "v1"

@@ -238,3 +238,106 @@ CREATE OR REPLACE VIEW job_queue_health AS
 SELECT status, priority, COUNT(*) AS job_count
 FROM jobs_outbox
 GROUP BY status, priority;
+
+--------------------------
+-- bars_ohlcv (Provider-based OHLCV storage, no tenant isolation)
+-- Optional: For config-driven pipeline ingestion
+--------------------------
+CREATE TABLE IF NOT EXISTS bars_ohlcv (
+    provider   TEXT NOT NULL,
+    symbol     TEXT NOT NULL CHECK (symbol = UPPER(symbol)),
+    interval   TEXT NOT NULL,
+    ts         TIMESTAMPTZ NOT NULL,
+    open       DOUBLE PRECISION NOT NULL,
+    high       DOUBLE PRECISION NOT NULL,
+    low        DOUBLE PRECISION NOT NULL,
+    close      DOUBLE PRECISION NOT NULL,
+    volume     DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT bars_ohlcv_pk PRIMARY KEY (provider, symbol, interval, ts)
+);
+CREATE INDEX IF NOT EXISTS ix_bars_ohlcv_provider_symbol_interval_ts_desc
+    ON bars_ohlcv (provider, symbol, interval, ts DESC);
+
+-- Hypertable + compression for bars_ohlcv
+SELECT create_hypertable('bars_ohlcv', by_range('ts'),
+    chunk_time_interval => INTERVAL '7 days', if_not_exists => TRUE);
+ALTER TABLE bars_ohlcv SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'provider,symbol,interval'
+);
+SELECT add_compression_policy('bars_ohlcv', INTERVAL '90 days');
+
+-- Trigger for bars_ohlcv
+DROP TRIGGER IF EXISTS update_bars_ohlcv_updated_at ON bars_ohlcv;
+CREATE TRIGGER update_bars_ohlcv_updated_at
+    BEFORE UPDATE ON bars_ohlcv
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+--------------------------
+-- job_runs (Audit-grade job execution tracking)
+--------------------------
+CREATE TABLE IF NOT EXISTS job_runs (
+    id                  BIGSERIAL PRIMARY KEY,
+    job_name            TEXT NOT NULL,
+    dataset_name        TEXT,
+    provider            TEXT,
+    mode                TEXT NOT NULL CHECK (mode IN ('live', 'backfill')),
+    status              TEXT NOT NULL DEFAULT 'running'
+                        CHECK (status IN ('running', 'success', 'failure', 'cancelled')),
+    config_fingerprint  TEXT,
+    pipeline_version    TEXT,
+    rows_written        BIGINT DEFAULT 0,
+    rows_failed         BIGINT DEFAULT 0,
+    symbols             TEXT[],
+    min_ts              TIMESTAMPTZ,
+    max_ts              TIMESTAMPTZ,
+    error_message       TEXT,
+    metadata            JSONB DEFAULT '{}'::jsonb,
+    started_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at        TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    elapsed_ms          BIGINT GENERATED ALWAYS AS (
+                            CASE
+                                WHEN completed_at IS NOT NULL
+                                THEN EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000
+                                ELSE NULL
+                            END
+                        ) STORED
+);
+
+-- Indexes for operational queries
+CREATE INDEX IF NOT EXISTS ix_job_runs_job_name_started
+    ON job_runs (job_name, started_at DESC);
+CREATE INDEX IF NOT EXISTS ix_job_runs_job_status_completed
+    ON job_runs (job_name, status, completed_at DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS ix_job_runs_provider_status
+    ON job_runs (provider, status);
+CREATE INDEX IF NOT EXISTS ix_job_runs_started_desc
+    ON job_runs (started_at DESC);
+CREATE INDEX IF NOT EXISTS ix_job_runs_metadata_heartbeat
+    ON job_runs USING GIN (metadata jsonb_path_ops);
+
+-- Trigger for job_runs
+DROP TRIGGER IF EXISTS update_job_runs_updated_at ON job_runs;
+CREATE TRIGGER update_job_runs_updated_at
+    BEFORE UPDATE ON job_runs
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Monitoring view for dashboards
+CREATE OR REPLACE VIEW job_runs_summary AS
+SELECT
+    job_name,
+    provider,
+    status,
+    COUNT(*) as run_count,
+    AVG(elapsed_ms) as avg_duration_ms,
+    SUM(rows_written) as total_rows,
+    MAX(started_at) as last_run_at,
+    COUNT(*) FILTER (WHERE status = 'failure') as failure_count
+FROM job_runs
+WHERE started_at > NOW() - INTERVAL '24 hours'
+GROUP BY job_name, provider, status
+ORDER BY last_run_at DESC;

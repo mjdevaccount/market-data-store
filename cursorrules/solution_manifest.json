@@ -278,7 +278,7 @@
     },
     {
       "path": "migrations/versions/0001_initial.py",
-      "sha": "0822a1ac16317fb9",
+      "sha": "23ac02c9accfab4f",
       "summary": "\"\"\"Initial schema for market-data-store"
     },
     {

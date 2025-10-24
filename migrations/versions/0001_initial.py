@@ -21,6 +21,7 @@ def upgrade() -> None:
     # Extensions
     op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
     op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
+    op.execute("CREATE EXTENSION IF NOT EXISTS timescaledb")
 
     # Tenants
     op.create_table(

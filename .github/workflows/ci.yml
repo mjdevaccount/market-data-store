@@ -43,7 +43,9 @@ jobs:
         run: alembic upgrade head
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/marketdata
+          ADMIN_DATABASE_URL: postgresql://user:pass@localhost:5432/marketdata
       - name: Run signals integration tests
         run: pytest tests/integration/test_signals_roundtrip.py -v
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/marketdata
+          ADMIN_DATABASE_URL: postgresql://user:pass@localhost:5432/marketdata

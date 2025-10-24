@@ -10,3 +10,40 @@ jobs:
       - run: python -m pip install -U pip wheel
       - run: pip install -e .
       - run: python -c "import datastore; print('ok')"
+
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg15
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: marketdata
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: python -m pip install -U pip wheel
+      - run: pip install alembic asyncpg pytest
+      - run: pip install -e .
+      - name: Wait for PostgreSQL
+        run: |
+          until pg_isready -h localhost -p 5432 -U user; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+      - name: Run migrations
+        run: alembic upgrade head
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/marketdata
+      - name: Run signals integration tests
+        run: pytest tests/integration/test_signals_roundtrip.py -v
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/marketdata

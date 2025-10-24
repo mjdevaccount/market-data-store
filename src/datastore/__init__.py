@@ -9,6 +9,17 @@ Exports:
 
 from .config import get_settings, Settings
 from .writes import StoreClient, AsyncStoreClient, Bar, BARS_WRITTEN_TOTAL, BARS_WRITE_LATENCY
+from .writes_signals import (
+    SignalsStoreClient,
+    AsyncSignalsStoreClient,
+    Signal,
+    SIGNALS_WRITTEN_TOTAL,
+    SIGNALS_WRITE_LATENCY,
+)
+from .queries_signals import (
+    SignalsQueryClient,
+    AsyncSignalsQueryClient,
+)
 from .job_tracking import (
     JobRunTracker,
     compute_config_fingerprint,
@@ -26,6 +37,15 @@ __all__ = [
     "Bar",
     "BARS_WRITTEN_TOTAL",
     "BARS_WRITE_LATENCY",
+    # Signals writers
+    "SignalsStoreClient",
+    "AsyncSignalsStoreClient",
+    "Signal",
+    "SIGNALS_WRITTEN_TOTAL",
+    "SIGNALS_WRITE_LATENCY",
+    # Signals queries
+    "SignalsQueryClient",
+    "AsyncSignalsQueryClient",
     # Job tracking
     "JobRunTracker",
     "compute_config_fingerprint",

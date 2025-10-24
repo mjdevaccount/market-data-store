@@ -27,6 +27,11 @@
       "summary": "\"\"\""
     },
     {
+      "path": "src/datastore/queries_signals.py",
+      "sha": "f6bdf25aae3e2866",
+      "summary": "\"\"\""
+    },
+    {
       "path": "src/datastore/reads.py",
       "sha": "94ff1a6ba05e8f7b",
       "summary": "# Intentionally minimal; add read helpers later (for ops/tests), not bulk APIs."
@@ -42,8 +47,13 @@
       "summary": "\"\"\""
     },
     {
+      "path": "src/datastore/writes_signals.py",
+      "sha": "1562c03f8ebf80ea",
+      "summary": "\"\"\""
+    },
+    {
       "path": "src/datastore/__init__.py",
-      "sha": "200b70e31cfd1131",
+      "sha": "30148a3f611dee2a",
       "summary": "\"\"\""
     },
     {
@@ -275,6 +285,11 @@
       "path": "migrations/versions/0002_add_bars_ohlcv_and_job_runs.py",
       "sha": "781791fd7ea4f8e2",
       "summary": "\"\"\"Add bars_ohlcv and job_runs tables for config-driven pipeline"
+    },
+    {
+      "path": "migrations/versions/0003_add_signals_table.py",
+      "sha": "66a75d9c9ef3dad6",
+      "summary": "\"\"\"Add signals table for streaming inference signals"
     },
     {
       "path": "cursorrules/index.mdc",

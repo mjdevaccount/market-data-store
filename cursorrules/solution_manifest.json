@@ -23,7 +23,7 @@
     },
     {
       "path": "src/datastore/job_tracking.py",
-      "sha": "691c551378ef9d75",
+      "sha": "bd777826b83109b9",
       "summary": "\"\"\""
     },
     {
@@ -43,12 +43,12 @@
     },
     {
       "path": "src/datastore/__init__.py",
-      "sha": "4d64ae13c831a20b",
+      "sha": "200b70e31cfd1131",
       "summary": "\"\"\""
     },
     {
       "path": "src/datastore/service/app.py",
-      "sha": "1aff1c9f9ec3659f",
+      "sha": "f67c9674d34bdf4d",
       "summary": "from fastapi import FastAPI, Response, status, HTTPException, Depends, Request"
     },
     {
@@ -183,7 +183,7 @@
     },
     {
       "path": "src/market_data_store/telemetry/drift_reporter.py",
-      "sha": "80c492beb3c1dcc6",
+      "sha": "3eca90ec1b672a9e",
       "summary": "\"\"\"Schema drift detection and telemetry reporting."
     },
     {

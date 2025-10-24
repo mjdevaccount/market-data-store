@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Response, status, HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from prometheus_client import (
-    CollectorRegistry,
     generate_latest,
     CONTENT_TYPE_LATEST,
+    REGISTRY,
     Counter,
     Gauge,
     Histogram,
@@ -15,20 +15,18 @@ from datastore.config import get_settings
 # Core v1.2.8 telemetry contracts
 from market_data_core.telemetry import HealthStatus, HealthComponent
 
+# Import metrics modules to ensure they're registered
+
 app = FastAPI(title="market-data-store (control-plane)", version="0.6.4")
 
-# Minimal metrics
-registry = CollectorRegistry()
-STORE_UP = Gauge("store_up", "Store service up (1/0)", registry=registry)
-MIGRATIONS_APPLIED = Counter("migrations_applied_total", "Applied migrations", registry=registry)
-REQUEST_COUNT = Counter(
-    "http_requests_total", "Total HTTP requests", ["method", "endpoint"], registry=registry
-)
+# Minimal metrics (using global REGISTRY)
+STORE_UP = Gauge("store_up", "Store service up (1/0)")
+MIGRATIONS_APPLIED = Counter("migrations_applied_total", "Applied migrations")
+REQUEST_COUNT = Counter("http_requests_total", "Total HTTP requests", ["method", "endpoint"])
 REQUEST_DURATION = Histogram(
     "http_request_duration_seconds",
     "HTTP request duration",
     ["method", "endpoint"],
-    registry=registry,
 )
 
 # Security
@@ -166,4 +164,5 @@ def backfill_job(job: str, token: str = Depends(verify_admin_token)):
 
 @app.get("/metrics")
 def metrics():
-    return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
+    """Expose Prometheus metrics (uses global REGISTRY for all metrics)."""
+    return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)

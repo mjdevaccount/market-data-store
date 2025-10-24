@@ -551,6 +551,18 @@ store_bars_write_latency_seconds{method="COPY|UPSERT"}
 
 **Key Insight**: `method` label shows whether COPY (1000+ rows) or UPSERT (< 1000 rows) was used, enabling performance tuning.
 
+#### JobRunTracker Metrics (Pipeline Audit)
+
+```promql
+# Total job runs tracked (counter)
+store_job_runs_total{job_name="...", provider="...", mode="live|backfill", status="started|success|failure|cancelled"}
+
+# Job run duration (histogram)
+store_job_runs_duration_seconds{job_name="...", provider="...", mode="live|backfill", status="success|failure|cancelled"}
+```
+
+**Key Insight**: Track job lifecycle from `status="started"` through final status (`success`, `failure`, `cancelled`). Duration histogram only recorded on completion.
+
 **Scrape at**: `http://localhost:8081/metrics` (FastAPI control-plane)
 
 ### Example: All Sinks

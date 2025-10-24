@@ -45,7 +45,8 @@ class TestJobRunLifecycle:
         """complete_run should update status and completed_at."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = (5000,)  # elapsed_ms
+        # Now returns (job_name, provider, mode, elapsed_ms) for metrics
+        mock_cursor.fetchone.return_value = ("test_job", "ibkr", "live", 5000)
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
         mock_connect.return_value.__enter__.return_value = mock_conn
 
@@ -343,3 +344,81 @@ class TestMetadata:
         # Metadata should be JSON-serialized in the call
         call_args = mock_cursor.execute.call_args[0][1]
         assert '{"git_hash": "abc123"' in str(call_args)
+
+
+class TestJobRunMetrics:
+    """Test Prometheus metrics integration."""
+
+    @patch("datastore.job_tracking.psycopg.connect")
+    @patch("datastore.job_tracking.JOB_RUNS_TOTAL")
+    def test_start_run_increments_started_metric(self, mock_metric, mock_connect):
+        """start_run should increment JOB_RUNS_TOTAL with status='started'."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = (123,)
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_connect.return_value.__enter__.return_value = mock_conn
+
+        mock_labels = MagicMock()
+        mock_metric.labels.return_value = mock_labels
+
+        tracker = JobRunTracker("postgresql://test")
+        tracker.start_run(job_name="test_job", provider="ibkr", mode="live")
+
+        mock_metric.labels.assert_called_once_with(
+            job_name="test_job", provider="ibkr", mode="live", status="started"
+        )
+        mock_labels.inc.assert_called_once()
+
+    @patch("datastore.job_tracking.psycopg.connect")
+    @patch("datastore.job_tracking.JOB_RUNS_TOTAL")
+    @patch("datastore.job_tracking.JOB_RUNS_DURATION")
+    def test_complete_run_records_metrics(self, mock_duration, mock_total, mock_connect):
+        """complete_run should record status metric and duration histogram."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        # First call (UPDATE), second call (SELECT for metrics)
+        mock_cursor.fetchone.return_value = ("test_job", "ibkr", "live", 5000)
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_connect.return_value.__enter__.return_value = mock_conn
+
+        mock_total_labels = MagicMock()
+        mock_total.labels.return_value = mock_total_labels
+        mock_duration_labels = MagicMock()
+        mock_duration.labels.return_value = mock_duration_labels
+
+        tracker = JobRunTracker("postgresql://test")
+        tracker.complete_run(run_id=123, status="success")
+
+        # Should record total with final status
+        mock_total.labels.assert_called_once_with(
+            job_name="test_job", provider="ibkr", mode="live", status="success"
+        )
+        mock_total_labels.inc.assert_called_once()
+
+        # Should record duration histogram (5000ms = 5.0s)
+        mock_duration.labels.assert_called_once_with(
+            job_name="test_job", provider="ibkr", mode="live", status="success"
+        )
+        mock_duration_labels.observe.assert_called_once_with(5.0)
+
+    @patch("datastore.job_tracking.psycopg.connect")
+    @patch("datastore.job_tracking.JOB_RUNS_TOTAL")
+    def test_complete_run_handles_missing_provider(self, mock_metric, mock_connect):
+        """complete_run should use 'unknown' for missing provider."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("test_job", None, "live", None)
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_connect.return_value.__enter__.return_value = mock_conn
+
+        mock_labels = MagicMock()
+        mock_metric.labels.return_value = mock_labels
+
+        tracker = JobRunTracker("postgresql://test")
+        tracker.complete_run(run_id=123, status="failure")
+
+        mock_metric.labels.assert_called_once_with(
+            job_name="test_job", provider="unknown", mode="live", status="failure"
+        )
+        mock_labels.inc.assert_called_once()

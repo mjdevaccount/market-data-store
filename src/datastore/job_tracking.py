@@ -23,6 +23,20 @@ import json
 import psycopg
 from psycopg.rows import dict_row
 from loguru import logger
+from prometheus_client import Counter, Histogram
+
+# Prometheus metrics (auto-registered with global REGISTRY)
+JOB_RUNS_TOTAL = Counter(
+    "store_job_runs_total",
+    "Total number of job runs tracked",
+    ["job_name", "provider", "mode", "status"],
+)
+JOB_RUNS_DURATION = Histogram(
+    "store_job_runs_duration_seconds",
+    "Duration of completed job runs in seconds",
+    ["job_name", "provider", "mode", "status"],
+    buckets=(1.0, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0, 3600.0),
+)
 
 
 class JobRunTracker:
@@ -96,6 +110,12 @@ class JobRunTracker:
                 )
                 run_id = cur.fetchone()[0]
                 conn.commit()
+
+                # Record metrics
+                JOB_RUNS_TOTAL.labels(
+                    job_name=job_name, provider=provider or "unknown", mode=mode, status="started"
+                ).inc()
+
                 logger.info(
                     f"Started job run {run_id}: {job_name} ({mode}) "
                     f"provider={provider} fingerprint={config_fingerprint}"
@@ -220,16 +240,41 @@ class JobRunTracker:
                 )
                 conn.commit()
 
-                # Fetch elapsed time for logging
-                cur.execute("SELECT elapsed_ms FROM job_runs WHERE id = %s", (run_id,))
-                row = cur.fetchone()
-                elapsed = row[0] if row else None
-
-                logger.info(
-                    f"Completed job run {run_id}: {status} " f"(elapsed: {elapsed}ms)"
-                    if elapsed
-                    else "(elapsed: N/A)"
+                # Fetch job details for metrics and logging
+                cur.execute(
+                    """
+                    SELECT job_name, provider, mode, elapsed_ms
+                    FROM job_runs WHERE id = %s
+                    """,
+                    (run_id,),
                 )
+                row = cur.fetchone()
+
+                if row:
+                    job_name, provider, mode, elapsed_ms = row
+
+                    # Record metrics
+                    JOB_RUNS_TOTAL.labels(
+                        job_name=job_name, provider=provider or "unknown", mode=mode, status=status
+                    ).inc()
+
+                    # Record duration if available
+                    if elapsed_ms is not None:
+                        duration_seconds = elapsed_ms / 1000.0
+                        JOB_RUNS_DURATION.labels(
+                            job_name=job_name,
+                            provider=provider or "unknown",
+                            mode=mode,
+                            status=status,
+                        ).observe(duration_seconds)
+
+                        logger.info(
+                            f"Completed job run {run_id}: {status} (elapsed: {elapsed_ms}ms)"
+                        )
+                    else:
+                        logger.info(f"Completed job run {run_id}: {status} (elapsed: N/A)")
+                else:
+                    logger.warning(f"Job run {run_id} not found after completion")
 
     def get_recent_runs(
         self, limit: int = 50, job_name: Optional[str] = None

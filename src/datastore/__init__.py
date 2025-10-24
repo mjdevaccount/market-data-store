@@ -9,7 +9,12 @@ Exports:
 
 from .config import get_settings, Settings
 from .writes import StoreClient, AsyncStoreClient, Bar, BARS_WRITTEN_TOTAL, BARS_WRITE_LATENCY
-from .job_tracking import JobRunTracker, compute_config_fingerprint
+from .job_tracking import (
+    JobRunTracker,
+    compute_config_fingerprint,
+    JOB_RUNS_TOTAL,
+    JOB_RUNS_DURATION,
+)
 
 __all__ = [
     # Config
@@ -24,4 +29,6 @@ __all__ = [
     # Job tracking
     "JobRunTracker",
     "compute_config_fingerprint",
+    "JOB_RUNS_TOTAL",
+    "JOB_RUNS_DURATION",
 ]

@@ -1,4 +1,4 @@
-name: Notify Infra on Release
+name: Notify Infrastructure on Release
 
 on:
   release:
@@ -6,49 +6,56 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to report (without 'v' prefix)"
-        required: true
+        description: "Version to report (without 'v' prefix). Leave empty to use the actual event payload."
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 jobs:
   notify-infra:
-    name: Update Infra Registry
+    name: Notify Infrastructure
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 2
 
     steps:
-      - name: Extract version
-        id: version
+      - name: Extract version info
+        id: vars
         run: |
-          if [ -n "${{ github.event.release.tag_name }}" ]; then
-            VERSION="${{ github.event.release.tag_name }}"
-          elif [ -n "${{ github.event.inputs.version }}" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
-            echo "❌ No version found"
-            exit 1
+            # Extract version from release tag (remove 'v' prefix if present)
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION=${VERSION#v}  # Remove 'v' prefix if present
           fi
-          # Remove 'v' prefix if present
-          VERSION="${VERSION#v}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "📦 Version: $VERSION"
 
-      - name: Notify market_data_infra
+          # Extract repo name from repository (e.g., "mjdevaccount/market-data-store" -> "market-data-store")
+          REPO_NAME="${{ github.repository }}"
+          ORIGIN=${REPO_NAME##*/}  # Get everything after the last '/'
+
+          echo "origin=$ORIGIN" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "repo_name=$REPO_NAME" >> $GITHUB_OUTPUT
+
+      - name: Trigger infra workflow
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.REPO_TOKEN }}
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
           repository: mjdevaccount/market_data_infra
           event-type: downstream_release
-          client-payload: >
+          client-payload: |
             {
-              "origin": "${{ github.event.repository.name }}",
-              "version": "${{ steps.version.outputs.version }}"
+              "origin": "${{ steps.vars.outputs.origin }}",
+              "version": "${{ steps.vars.outputs.version }}",
+              "repo_name": "${{ steps.vars.outputs.repo_name }}",
+              "release_url": "${{ github.event.release.html_url }}",
+              "release_body": "${{ github.event.release.body }}"
             }
 
-      - name: Log completion
+      - name: Log Summary
         run: |
-          echo "✅ Notified market_data_infra"
-          echo "   Repo: ${{ github.event.repository.name }}"
-          echo "   Version: ${{ steps.version.outputs.version }}"
+          echo "✅ Triggered infra workflow for ${{ steps.vars.outputs.origin }} v${{ steps.vars.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "📤 Sent to: mjdevaccount/market_data_infra" >> $GITHUB_STEP_SUMMARY
+          echo "🎯 Event: downstream_release" >> $GITHUB_STEP_SUMMARY

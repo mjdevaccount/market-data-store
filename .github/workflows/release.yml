@@ -102,30 +102,3 @@ jobs:
           echo '```bash' >> $GITHUB_STEP_SUMMARY
           echo "pip install market-data-store==${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-
-  notify-infra:
-    # Must run on your self-hosted runner (same host/network as infra_web)
-    runs-on: self-hosted
-    needs: release
-    steps:
-      - name: Notify Infra Portal (release -> infra_web runtime sync)
-        env:
-          SECRET: ${{ secrets.WEBHOOK_SECRET }}
-          REPO_NAME: ${{ github.repository }}   # e.g., mjdevaccount/market-data-store
-          TAG_NAME: ${{ github.ref_name }}      # e.g., v1.3.0
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Construct minimal GitHub-style 'release' payload
-          repo_short="${REPO_NAME##*/}" # strip org
-          payload=$(jq -n --arg repo "$repo_short" --arg tag "$TAG_NAME" \
-                    '{repository:{name:$repo}, release:{tag_name:$tag}}')
-
-          sig="sha256=$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$SECRET" | cut -d' ' -f2)"
-
-          curl -sS -X POST http://localhost:8000/runtime/webhook \
-               -H "X-GitHub-Event: release" \
-               -H "X-Hub-Signature-256: $sig" \
-               -H "Content-Type: application/json" \
-               -d "$payload" \
-               -o /dev/stderr -w "HTTP %{http_code}\n"

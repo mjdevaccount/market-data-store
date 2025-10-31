@@ -1,7 +1,6 @@
 name: Registry Contract Tests
 
 on:
-  pull_request:
   push:
     branches: [master, main]
   schedule:

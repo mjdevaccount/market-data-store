@@ -92,6 +92,18 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
 
+      - name: Dispatch to market_data_orchestrator
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: mjdevaccount/market_data_orchestrator
+          event-type: downstream_release
+          client-payload: |
+            {
+              "version": "${{ steps.bump.outputs.new_version }}",
+              "origin": "market-data-store"
+            }
+
       - name: Notify Infra Repository
         if: success()
         uses: peter-evans/repository-dispatch@v3

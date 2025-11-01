@@ -1,6 +1,6 @@
 [project]
 name = "market-data-store"
-version = "0.6.62"
+version = "0.6.63"
 description = "Data store control-plane (schema, migrations, policies, ops) for market-data."
 readme = "README.md"
 requires-python = ">=3.11"
